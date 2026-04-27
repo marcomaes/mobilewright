@@ -2,9 +2,7 @@ import sharp from 'sharp';
 import type { MobilewrightDriver, ViewNode, Bounds, SwipeDirection, ScreenSize } from '@mobilewright/protocol';
 import { queryAll, type LocatorStrategy } from './query-engine.js';
 import { sleep } from './sleep.js';
-import { captureLocation, type StepLocation } from './stackTrace.js';
-
-export type StepFn = (title: string, fn: () => Promise<unknown>, location: StepLocation | undefined) => Promise<unknown>;
+import type { Tracer } from './tracing.js';
 
 export interface LocatorOptions {
   timeout?: number;
@@ -25,24 +23,26 @@ const DEFAULT_STABILITY_DELAY = 50;
 
 export class Locator {
   /** Create a root locator that searches the entire view hierarchy. */
-  static root(driver: MobilewrightDriver, options: LocatorOptions = {}): Locator {
-    return new Locator(driver, { kind: 'root' }, options);
+  static root(driver: MobilewrightDriver, options: LocatorOptions = {}, tracer?: Tracer | null): Locator {
+    return new Locator(driver, { kind: 'root' }, options, tracer ?? null);
   }
 
-  _stepFn: StepFn | null = null;
+  readonly _tracer: Tracer | null;
 
   constructor(
     private readonly driver: MobilewrightDriver,
     private readonly strategy: LocatorStrategy,
     private readonly options: LocatorOptions = {},
-  ) {}
+    tracer: Tracer | null = null,
+  ) {
+    this._tracer = tracer;
+  }
 
-  private async _step<T>(title: string, fn: () => Promise<T>): Promise<T> {
-    if (this._stepFn) {
-      const location = captureLocation();
-      return this._stepFn(title, fn as () => Promise<unknown>, location) as Promise<T>;
+  private async _wrapAction<T>(method: string, params: Record<string, unknown>, fn: () => Promise<T>): Promise<T> {
+    if (!this._tracer) {
+      return fn();
     }
-    return fn();
+    return this._tracer.wrapAction('Locator', method, params, fn);
   }
 
   // ─── Chaining ────────────────────────────────────────────────
@@ -72,13 +72,12 @@ export class Locator {
   }
 
   private child(childStrategy: LocatorStrategy): Locator {
-    const loc = new Locator(
+    return new Locator(
       this.driver,
       { kind: 'chain', parent: this.strategy, child: childStrategy },
       this.options,
+      this._tracer,
     );
-    loc._stepFn = this._stepFn;
-    return loc;
   }
 
   // ─── Collection ──────────────────────────────────────────────
@@ -92,13 +91,12 @@ export class Locator {
   }
 
   nth(index: number): Locator {
-    const loc = new Locator(
+    return new Locator(
       this.driver,
       { kind: 'nth', parent: this.strategy, index },
       this.options,
+      this._tracer,
     );
-    loc._stepFn = this._stepFn;
-    return loc;
   }
 
   async count(): Promise<number> {
@@ -109,21 +107,20 @@ export class Locator {
   async all(): Promise<Locator[]> {
     const roots = await this.driver.getViewHierarchy();
     const matches = queryAll(roots, this.strategy);
-    return matches.map((_, i) => {
-      const loc = new Locator(
+    return matches.map((_, i) =>
+      new Locator(
         this.driver,
         { kind: 'nth', parent: this.strategy, index: i },
         this.options,
-      );
-      loc._stepFn = this._stepFn;
-      return loc;
-    });
+        this._tracer,
+      ),
+    );
   }
 
   // ─── Actions ─────────────────────────────────────────────────
 
   async tap(opts?: { timeout?: number }): Promise<void> {
-    return this._step('locator.tap()', async () => {
+    return this._wrapAction('tap', {}, async () => {
       const node = await this.resolveActionable(opts?.timeout);
       const { x, y } = centerOf(node.bounds);
       await this.driver.tap(x, y);
@@ -131,7 +128,7 @@ export class Locator {
   }
 
   async doubleTap(opts?: { timeout?: number }): Promise<void> {
-    return this._step('locator.doubleTap()', async () => {
+    return this._wrapAction('doubleTap', {}, async () => {
       const node = await this.resolveActionable(opts?.timeout);
       const { x, y } = centerOf(node.bounds);
       await this.driver.doubleTap(x, y);
@@ -139,7 +136,7 @@ export class Locator {
   }
 
   async longPress(opts?: { timeout?: number; duration?: number }): Promise<void> {
-    return this._step('locator.longPress()', async () => {
+    return this._wrapAction('longPress', { duration: opts?.duration }, async () => {
       const node = await this.resolveActionable(opts?.timeout);
       const { x, y } = centerOf(node.bounds);
       await this.driver.longPress(x, y, opts?.duration);
@@ -147,7 +144,7 @@ export class Locator {
   }
 
   async fill(text: string, opts?: { timeout?: number }): Promise<void> {
-    return this._step(`locator.fill(${JSON.stringify(text)})`, async () => {
+    return this._wrapAction('fill', { text }, async () => {
       const node = await this.resolveActionable(opts?.timeout);
       const { x, y } = centerOf(node.bounds);
       await this.driver.tap(x, y);
@@ -156,23 +153,15 @@ export class Locator {
   }
 
   async screenshot(opts?: { timeout?: number }): Promise<Buffer> {
-    return this._step('locator.screenshot()', async () => {
+    return this._wrapAction('screenshot', {}, async () => {
       const node = await this.resolveVisible(opts?.timeout);
       const fullScreenshot = await this.driver.screenshot();
       return cropToElement(fullScreenshot, node.bounds, await this.driver.getScreenSize());
     });
   }
 
-  async swipe(opts: { direction: SwipeDirection; timeout?: number }): Promise<void> {
-    return this._step(`locator.swipe(${opts.direction})`, async () => {
-      const node = await this.resolveActionable(opts.timeout);
-      const { x, y } = centerOf(node.bounds);
-      await this.driver.swipe(opts.direction, { startX: x, startY: y });
-    });
-  }
-
   async scrollIntoViewIfNeeded(opts?: ScrollIntoViewOptions): Promise<void> {
-    return this._step('locator.scrollIntoViewIfNeeded()', async () => {
+    return this._wrapAction('scrollIntoViewIfNeeded', { direction: opts?.direction, maxSwipes: opts?.maxSwipes }, async () => {
       const maxSwipes = opts?.maxSwipes ?? 10;
       const direction: SwipeDirection = opts?.direction ?? 'up';
       const screenSize = await this.driver.getScreenSize();

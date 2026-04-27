@@ -121,6 +121,8 @@ export interface MobilewrightConfig {
   globalTeardown?: string | string[];
   /** Multi-device / multi-platform project matrix. */
   projects?: MobilewrightProjectConfig[];
+  /** Trace recording mode. Default: 'off'. */
+  trace?: 'on' | 'off' | 'retain-on-failure' | 'on-first-retry';
 }
 
 export function toArray<T>(value: T | T[] | undefined): T[] {

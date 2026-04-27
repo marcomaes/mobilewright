@@ -12,8 +12,10 @@ import {
   toArray,
   type DevicePoolClient,
 } from 'mobilewright';
-import { expect } from '@mobilewright/core';
+import { expect, Tracer } from '@mobilewright/core';
 import type { Device, Screen } from '@mobilewright/core';
+
+type TraceMode = 'on' | 'off' | 'retain-on-failure' | 'on-first-retry';
 
 const debug = createDebug('mw:test:fixtures');
 
@@ -100,6 +102,7 @@ export const test = base.extend<MobilewrightTestFixtures>({
       throw new Error(`Unsupported platform: "${merged.platform}". Must be "ios" or "android".`);
     }
 
+
     for (const appPath of toArray(merged.installApps)) {
       assertValidZipFile(appPath);
     }
@@ -185,10 +188,41 @@ export const test = base.extend<MobilewrightTestFixtures>({
       }
     }
 
-    device.screen.setStepFn((title, fn, location) => (base.step as any)(title, fn, { location }));
+    // ── Tracing ──────────────────────────────────────────────
+    const config = await loadConfig(process.cwd(), testInfo.config.configFile);
+    const traceMode: TraceMode = config.trace ?? 'off';
+    const shouldTrace = traceMode === 'on'
+      || traceMode === 'retain-on-failure'
+      || (traceMode === 'on-first-retry' && testInfo.retry === 1);
+
+    let tracer: Tracer | null = null;
+    if (shouldTrace) {
+      tracer = new Tracer();
+      device.setTracer(tracer);
+    }
 
     await use(device.screen);
 
+    // ── Teardown: tracing ────────────────────────────────────
+    if (tracer) {
+      const failed = testInfo.status !== testInfo.expectedStatus;
+      const shouldSaveTrace = traceMode === 'on'
+        || (traceMode === 'retain-on-failure' && failed)
+        || (traceMode === 'on-first-retry' && testInfo.retry === 1);
+
+      if (shouldSaveTrace) {
+        try {
+          await mkdir(testInfo.outputDir, { recursive: true });
+          const tracePath = join(testInfo.outputDir, 'trace.zip');
+          await tracer.save(tracePath);
+          await testInfo.attach('trace', { path: tracePath, contentType: 'application/zip' });
+        } catch {
+          // Best effort
+        }
+      }
+    }
+
+    // ── Teardown: video ──────────────────────────────────────
     if (shouldRecord) {
       try {
         const result = await device.stopRecording();
