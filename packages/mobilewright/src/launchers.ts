@@ -30,6 +30,7 @@ export interface ConnectDeviceParams {
   driverConfig?: DriverConfig;
   url?: string;
   timeout?: number;
+  uploadTimeout?: number;
 }
 
 export interface FindDeviceParams {
@@ -40,11 +41,12 @@ export interface FindDeviceParams {
   url?: string;
 }
 
-export function createDriver(driverConfig?: DriverConfig, url?: string): MobilewrightDriver {
+export function createDriver(driverConfig?: DriverConfig, url?: string, uploadTimeout?: number): MobilewrightDriver {
   if (driverConfig?.type === 'mobilenext' || driverConfig?.type === 'mobile-use') {
     return new MobileNextDriver({
       region: driverConfig.region,
       apiKey: driverConfig.apiKey,
+      uploadTimeout,
     });
   }
   return new MobilecliDriver({ url });
@@ -54,7 +56,7 @@ export async function connectDevice(params: ConnectDeviceParams): Promise<Device
   // URL is baked into the driver at construction time; don't override it here.
   // Passing mobilecli's default URL into MobileNextDriver.connect() would send
   // requests to the wrong server.
-  const driver = createDriver(params.driverConfig, params.url);
+  const driver = createDriver(params.driverConfig, params.url, params.uploadTimeout);
   const device = new Device(driver);
   await device.connect({
     platform: params.platform,

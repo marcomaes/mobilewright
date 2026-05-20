@@ -1,6 +1,7 @@
 import { createReadStream, openSync, readSync, closeSync } from 'node:fs';
 import { stat } from 'node:fs/promises';
 import { basename } from 'node:path';
+import { Transform } from 'node:stream';
 import createDebug from 'debug';
 import type {
   AppInfo,
@@ -92,6 +93,7 @@ interface MobileNextDevicesResponse {
 export interface MobileNextDriverOptions {
   region?: string;
   apiKey?: string;
+  uploadTimeout?: number;
 }
 
 const VALID_PLATFORMS = new Set<string>(['ios', 'android']);
@@ -494,16 +496,36 @@ export class MobileNextDriver implements MobilewrightDriver {
     });
 
     debug('uploading %s to S3 (uploadId=%s)', filename, upload.uploadId);
-    const body = createReadStream(filePath);
-    const response = await fetch(upload.uploadUrl, {
-      method: 'PUT',
-      headers: {
-        'Content-Type': 'application/octet-stream',
-        'Content-Length': String(fileInfo.size),
+    let bytesUploaded = 0;
+    const tracker = new Transform({
+      transform(chunk: Buffer, _encoding, callback) {
+        bytesUploaded += chunk.length;
+        callback(null, chunk);
       },
-      body,
-      duplex: 'half',
-    } as RequestInit);
+    });
+    createReadStream(filePath).pipe(tracker);
+
+    const uploadTimeout = this.options.uploadTimeout ?? 300_000;
+    const progressInterval = setInterval(() => {
+      const pct = Math.round((bytesUploaded / fileInfo.size) * 100);
+      debug('upload progress %s: %d/%d bytes (%d%%)', filename, bytesUploaded, fileInfo.size, pct);
+    }, 10_000);
+
+    let response!: Response;
+    try {
+      response = await fetch(upload.uploadUrl, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/octet-stream',
+          'Content-Length': String(fileInfo.size),
+        },
+        body: tracker,
+        duplex: 'half',
+        signal: AbortSignal.timeout(uploadTimeout),
+      } as RequestInit);
+    } finally {
+      clearInterval(progressInterval);
+    }
     if (!response.ok) {
       throw new Error(`Upload failed with status ${response.status}`);
     }

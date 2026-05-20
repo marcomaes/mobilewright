@@ -27,6 +27,8 @@ interface BeforeActionEvent {
   class: string;
   method: string;
   params: Record<string, unknown>;
+  pageId?: string;
+  beforeSnapshot?: string;
   stepId?: string;
   parentId?: string;
   stack?: StackFrame[];
@@ -36,6 +38,7 @@ interface AfterActionEvent {
   type: 'after';
   callId: string;
   endTime: number;
+  afterSnapshot?: string;
   error?: { message: string; stack?: string };
   attachments?: TraceAttachment[];
 }
@@ -48,6 +51,30 @@ interface ScreencastFrameEvent {
   height: number;
   timestamp: number;
   frameSwapWallTime?: number;
+}
+
+// NodeSnapshot uses Playwright's compact array format:
+//   string → text node
+//   [tagName] | [tagName, attrs, ...children] → element node
+type NodeSnapshot = string | unknown[];
+
+interface FrameSnapshotEvent {
+  type: 'frame-snapshot';
+  snapshot: {
+    snapshotName: string;
+    callId: string;
+    pageId: string;
+    frameId: string;
+    frameUrl: string;
+    timestamp: number;
+    wallTime: number;
+    collectionTime: number;
+    doctype: string;
+    html: NodeSnapshot;
+    resourceOverrides: Array<{ url: string; sha1: string }>;
+    viewport: { width: number; height: number };
+    isMainFrame: boolean;
+  };
 }
 
 interface ErrorEvent {
@@ -75,7 +102,10 @@ type TraceEvent =
   | BeforeActionEvent
   | AfterActionEvent
   | ScreencastFrameEvent
+  | FrameSnapshotEvent
   | ErrorEvent;
+
+type ScreenshotCapture = { sha1: string; width: number; height: number };
 
 // ─── Tracer ─────────────────────────────────────────────────────
 
@@ -126,7 +156,7 @@ export class Tracer {
     return hash;
   }
 
-  private async captureScreenshot(): Promise<{ sha1: string; width: number; height: number } | null> {
+  private async captureScreenshot(): Promise<ScreenshotCapture | null> {
     if (!this.driver) {
       return null;
     }
@@ -167,6 +197,47 @@ export class Tracer {
     return frames;
   }
 
+  private pushScreencastFrame(shot: ScreenshotCapture): void {
+    this.events.push({
+      type: 'screencast-frame',
+      pageId: 'device@1',
+      sha1: shot.sha1,
+      width: shot.width,
+      height: shot.height,
+      timestamp: this.monotonicTime(),
+      frameSwapWallTime: Date.now(),
+    });
+  }
+
+  private pushFrameSnapshot(snapshotName: string, callId: string, shot: ScreenshotCapture): void {
+    this.events.push({
+      type: 'frame-snapshot',
+      snapshot: {
+        snapshotName,
+        callId,
+        pageId: 'device@1',
+        frameId: 'device@1',
+        frameUrl: 'mobilewright://device',
+        timestamp: this.monotonicTime(),
+        wallTime: Date.now(),
+        collectionTime: 0,
+        doctype: 'html',
+        html: [
+          'HTML', {},
+          ['HEAD', {},
+            ['STYLE', {}, 'body{margin:0;padding:0;background:#000}img{width:100%;height:100%;object-fit:contain;display:block}'],
+          ],
+          ['BODY', {},
+            ['IMG', { src: 'screenshot.png' }],
+          ],
+        ],
+        resourceOverrides: [{ url: 'screenshot.png', sha1: shot.sha1 }],
+        viewport: { width: shot.width, height: shot.height },
+        isMainFrame: true,
+      },
+    });
+  }
+
   async wrapAction<T>(
     className: string,
     method: string,
@@ -176,21 +247,12 @@ export class Tracer {
     const callId = this.nextCallId();
     const stack = this.captureStack();
 
-    // Before screenshot
-    const beforeScreenshot = await this.captureScreenshot();
-    if (beforeScreenshot) {
-      this.events.push({
-        type: 'screencast-frame',
-        pageId: 'device@1',
-        sha1: beforeScreenshot.sha1,
-        width: beforeScreenshot.width,
-        height: beforeScreenshot.height,
-        timestamp: this.monotonicTime(),
-        frameSwapWallTime: Date.now(),
-      });
+    const beforeShot = await this.captureScreenshot();
+    if (beforeShot) {
+      this.pushScreencastFrame(beforeShot);
+      this.pushFrameSnapshot(`before@${callId}`, callId, beforeShot);
     }
 
-    // Before event
     this.events.push({
       type: 'before',
       callId,
@@ -199,46 +261,32 @@ export class Tracer {
       method,
       params,
       stack,
+      pageId: 'device@1',
+      ...(beforeShot && { beforeSnapshot: `before@${callId}` }),
     });
 
     try {
       const result = await fn();
 
-      // After screenshot
-      const afterScreenshot = await this.captureScreenshot();
-      if (afterScreenshot) {
-        this.events.push({
-          type: 'screencast-frame',
-          pageId: 'device@1',
-          sha1: afterScreenshot.sha1,
-          width: afterScreenshot.width,
-          height: afterScreenshot.height,
-          timestamp: this.monotonicTime(),
-          frameSwapWallTime: Date.now(),
-        });
+      const afterShot = await this.captureScreenshot();
+      if (afterShot) {
+        this.pushScreencastFrame(afterShot);
+        this.pushFrameSnapshot(`after@${callId}`, callId, afterShot);
       }
 
-      // After event
       this.events.push({
         type: 'after',
         callId,
         endTime: this.monotonicTime(),
+        ...(afterShot && { afterSnapshot: `after@${callId}` }),
       });
 
       return result;
     } catch (error) {
-      // After screenshot on failure
-      const errorScreenshot = await this.captureScreenshot();
-      if (errorScreenshot) {
-        this.events.push({
-          type: 'screencast-frame',
-          pageId: 'device@1',
-          sha1: errorScreenshot.sha1,
-          width: errorScreenshot.width,
-          height: errorScreenshot.height,
-          timestamp: this.monotonicTime(),
-          frameSwapWallTime: Date.now(),
-        });
+      const errorShot = await this.captureScreenshot();
+      if (errorShot) {
+        this.pushScreencastFrame(errorShot);
+        this.pushFrameSnapshot(`after@${callId}`, callId, errorShot);
       }
 
       const err = error instanceof Error ? error : new Error(String(error));
@@ -247,6 +295,7 @@ export class Tracer {
         type: 'after',
         callId,
         endTime: this.monotonicTime(),
+        ...(errorShot && { afterSnapshot: `after@${callId}` }),
         error: {
           message: err.message,
           stack: err.stack,
@@ -262,19 +311,14 @@ export class Tracer {
 
     const zipFile = new yazl.ZipFile();
 
-    // Add trace events as NDJSON
     const traceContent = this.events.map(e => JSON.stringify(e)).join('\n');
     zipFile.addBuffer(Buffer.from(traceContent), 'trace.trace');
-
-    // Add empty network trace
     zipFile.addBuffer(Buffer.from(''), 'trace.network');
 
-    // Add screenshot resources
     for (const [sha1, data] of this.resources) {
       zipFile.addBuffer(data, `resources/${sha1}`);
     }
 
-    // Write ZIP to disk
     await new Promise<void>((resolve, reject) => {
       zipFile.end(undefined, () => {
         const stream = createWriteStream(outputPath);

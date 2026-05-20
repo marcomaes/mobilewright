@@ -144,13 +144,16 @@ export const test = base.extend<MobilewrightTestFixtures>({
       driverConfig: merged.driver,
       url: merged.url,
       timeout: merged.timeout,
+      uploadTimeout: merged.uploadTimeout,
     });
     debug('connected to device %s', handle.deviceId);
 
     try {
+      const uploadTimeout = merged.uploadTimeout ?? 300_000;
       for (const appPath of toArray(merged.installApps)) {
         const installed = await client.isAppInstalled(handle.allocationId, appPath);
         if (!installed) {
+          testInfo.setTimeout(testInfo.timeout + uploadTimeout);
           await device.installApp(appPath);
           await client.recordAppInstalled(handle.allocationId, appPath);
         }

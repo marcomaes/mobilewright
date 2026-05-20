@@ -103,6 +103,8 @@ export interface MobilewrightConfig {
   outputDir?: string;
   /** Global timeout for tests (ms). */
   timeout?: number;
+  /** Timeout for app uploads in milliseconds. Default: 300000 (5 minutes). */
+  uploadTimeout?: number;
   /** Global timeout for locators (ms). */
   actionTimeout?: number;
   /** Maximum retry count for flaky tests. */
