@@ -2,6 +2,9 @@ import { access } from 'node:fs/promises';
 import { isAbsolute, join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { createRequire } from 'node:module';
+import type { MobilewrightDriver } from '@mobilewright/protocol';
+import { MobilecliDriver } from '@mobilewright/driver-mobilecli';
+import { MobileUseDriver } from '@mobilewright/driver-mobile-use';
 
 const _require = createRequire(import.meta.url);
 
@@ -79,8 +82,13 @@ export interface MobilewrightConfig {
   mobilecliPath?: string;
   /** Auto-start mobilecli server if not running. Default: true. */
   autoStart?: boolean;
-  /** Driver to use. Default: { type: 'mobilecli' }. */
-  driver?: DriverConfig;
+  /**
+   * Driver to use. Pass an instance for custom/third-party drivers:
+   *   driver: new MobilecliDriver()
+   *   driver: new MobileUseDriver({ apiKey })
+   * The legacy object form `{ type: 'mobilecli' }` still works but is deprecated.
+   */
+  driver?: MobilewrightDriver | DriverConfig;
 
   // ── Test runner ─────────────────────────────────────────────
   /** Directory to search for test files. Default: config file directory. */
@@ -133,6 +141,40 @@ export function defineConfig(config: MobilewrightConfig): MobilewrightConfig {
     globalSetup: userSetups.length > 0 ? [ourSetup, ...userSetups] : ourSetup,
     globalTeardown: userTeardowns.length > 0 ? [...userTeardowns, ourTeardown] : ourTeardown,
   };
+}
+
+/**
+ * Resolve config.driver to a MobilewrightDriver instance.
+ * Accepts either an instance (new MobilecliDriver()) or the legacy object form
+ * ({ type: 'mobilecli' }). The legacy form is deprecated and logs a warning.
+ */
+export function resolveDriver(config: MobilewrightConfig): MobilewrightDriver {
+  const { driver } = config;
+
+  if (driver && typeof (driver as MobilewrightDriver).allocate === 'function') {
+    return driver as MobilewrightDriver;
+  }
+
+  const legacyConfig = driver as DriverConfig | undefined;
+  const type = legacyConfig?.type ?? 'mobilecli';
+
+  if (legacyConfig) {
+    console.warn(
+      `[mobilewright] config.driver as an object ({ type: '${type}' }) is deprecated. ` +
+      `Pass a driver instance instead, e.g. new ${type === 'mobilecli' ? 'MobilecliDriver' : 'MobileUseDriver'}()`,
+    );
+  }
+
+  if (!legacyConfig || type === 'mobilecli') {
+    return new MobilecliDriver({ url: config.url, autoStart: config.autoStart });
+  }
+
+  if (type === 'mobile-use') {
+    const mobileUseConfig = legacyConfig as DriverConfigMobileUse;
+    return new MobileUseDriver({ region: mobileUseConfig.region, apiKey: mobileUseConfig.apiKey });
+  }
+
+  throw new Error(`[mobilewright] Unknown driver type: "${(legacyConfig as DriverConfig).type}"`);
 }
 
 const CONFIG_FILES = [

@@ -16,9 +16,23 @@ import type {
   SwipeOptions,
   ViewNode,
 } from './types.js';
+import type { AllocationCriteria, AllocateResult } from './allocator.js';
 
 export interface MobilewrightDriver {
-  // Connection
+  // Identity
+  readonly name: string;
+
+  // Pool management (coordinator-side)
+  allocate(
+    criteria: AllocationCriteria,
+    takenDeviceIds: ReadonlySet<string>,
+    signal?: AbortSignal,
+  ): Promise<AllocateResult>;
+  release(deviceId: string): Promise<void>;
+  setup?(): Promise<void>;
+  teardown?(): Promise<void>;
+
+  // Connection (worker-side)
   connect(config: ConnectionConfig): Promise<Session>;
   disconnect(): Promise<void>;
 

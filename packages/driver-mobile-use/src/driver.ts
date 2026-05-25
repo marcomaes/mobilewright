@@ -3,6 +3,8 @@ import { stat } from 'node:fs/promises';
 import { basename } from 'node:path';
 import createDebug from 'debug';
 import type {
+  AllocateResult,
+  AllocationCriteria,
   AppInfo,
   ConnectionConfig,
   DeviceInfo,
@@ -195,9 +197,14 @@ type DeviceFilter =
 const debug = createDebug('mw:driver-mobile-use');
 
 export class MobileUseDriver implements MobilewrightDriver {
+  readonly name = 'mobile-use';
+
   private session: ActiveSession | null = null;
   private readonly options: MobileUseDriverOptions;
   private ownsLease = false;
+  // Coordinator-side: one entry per device allocated via allocate().
+  // Independent from the worker-side `session` field.
+  private readonly allocatedSessions = new Map<string, MobileUseDriver>();
 
   get deviceInfo(): MobileUseDeviceInfo | null {
     if (!this.session) {
@@ -210,7 +217,40 @@ export class MobileUseDriver implements MobilewrightDriver {
     this.options = options;
   }
 
-  // ─── Connection ──────────────────────────────────────────────
+  // ─── Pool management (coordinator-side) ─────────────────────
+
+  async allocate(
+    criteria: AllocationCriteria,
+    _takenDeviceIds: ReadonlySet<string>,
+    _signal?: AbortSignal,
+  ): Promise<AllocateResult> {
+    const holder = new MobileUseDriver(this.options);
+    const result = await holder.connect({
+      platform: criteria.platform ?? 'ios',
+      deviceId: criteria.deviceId,
+      deviceName: criteria.deviceNamePattern ? new RegExp(criteria.deviceNamePattern) : undefined,
+    });
+    this.allocatedSessions.set(result.deviceId, holder);
+    const info = holder.deviceInfo;
+    return {
+      deviceId: result.deviceId,
+      platform: result.platform,
+      driver: this.name,
+      model: info?.model ?? undefined,
+      osVersion: info?.osVersion ?? undefined,
+      type: info?.type ?? undefined,
+    };
+  }
+
+  async release(deviceId: string): Promise<void> {
+    const holder = this.allocatedSessions.get(deviceId);
+    if (holder) {
+      this.allocatedSessions.delete(deviceId);
+      await holder.disconnect();
+    }
+  }
+
+  // ─── Connection (worker-side) ────────────────────────────────
 
   async connect(config: ConnectionConfig): Promise<Session> {
     const baseUrl = config.url ?? DEFAULT_URL;

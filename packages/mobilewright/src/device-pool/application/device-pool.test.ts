@@ -1,11 +1,12 @@
 import { test, expect } from '@playwright/test';
 import { DevicePool } from './device-pool.js';
-import { NoDeviceAvailableError } from './ports.js';
-import type { DeviceAllocator, AllocateResult } from './ports.js';
+import { NoDeviceAvailableError } from '@mobilewright/protocol';
+import type { AllocateResult, MobilewrightDriver } from '@mobilewright/protocol';
 
-function makeAllocator(devices: AllocateResult[]): DeviceAllocator {
+function makeDriver(devices: AllocateResult[]): MobilewrightDriver {
   let i = 0;
   return {
+    name: 'test',
     async allocate() {
       if (i >= devices.length) {
         throw new Error('no more fake devices');
@@ -13,12 +14,12 @@ function makeAllocator(devices: AllocateResult[]): DeviceAllocator {
       return devices[i++];
     },
     async release() { /* no-op */ },
-  };
+  } as unknown as MobilewrightDriver;
 }
 
 test('first allocate spins up a slot and returns a handle', async () => {
-  const allocator = makeAllocator([{ deviceId: 'd1', platform: 'ios' }]);
-  const pool = new DevicePool({ allocator, maxSlots: 2 });
+  const driver = makeDriver([{ deviceId: 'd1', platform: 'ios' }]);
+  const pool = new DevicePool({ driver, maxSlots: 2 });
 
   const handle = await pool.allocate({ platform: 'ios' });
 
@@ -28,8 +29,8 @@ test('first allocate spins up a slot and returns a handle', async () => {
 });
 
 test('a released slot is reused by a subsequent allocate', async () => {
-  const allocator = makeAllocator([{ deviceId: 'd1', platform: 'ios' }]);
-  const pool = new DevicePool({ allocator, maxSlots: 2 });
+  const driver = makeDriver([{ deviceId: 'd1', platform: 'ios' }]);
+  const pool = new DevicePool({ driver, maxSlots: 2 });
 
   const first = await pool.allocate({ platform: 'ios' });
   await pool.release(first.allocationId);
@@ -41,14 +42,15 @@ test('a released slot is reused by a subsequent allocate', async () => {
 
 test('a second concurrent allocate when no free slot triggers parallel allocation', async () => {
   let calls = 0;
-  const allocator: DeviceAllocator = {
+  const driver = {
+    name: 'test',
     async allocate(): Promise<AllocateResult> {
       calls++;
       return { deviceId: `d${calls}`, platform: 'ios' };
     },
     async release() {},
-  };
-  const pool = new DevicePool({ allocator, maxSlots: 2 });
+  } as unknown as MobilewrightDriver;
+  const pool = new DevicePool({ driver, maxSlots: 2 });
 
   const [a, b] = await Promise.all([
     pool.allocate({ platform: 'ios' }),
@@ -61,8 +63,8 @@ test('a second concurrent allocate when no free slot triggers parallel allocatio
 });
 
 test('waiter resolves when an existing allocated slot is released', async () => {
-  const allocator = makeAllocator([{ deviceId: 'd1', platform: 'ios' }]);
-  const pool = new DevicePool({ allocator, maxSlots: 1 });
+  const driver = makeDriver([{ deviceId: 'd1', platform: 'ios' }]);
+  const pool = new DevicePool({ driver, maxSlots: 1 });
 
   const first = await pool.allocate({ platform: 'ios' });
 
@@ -81,11 +83,12 @@ test('waiter resolves when an existing allocated slot is released', async () => 
 test('NoDeviceAvailableError re-queues the waiter to be served on next release', async () => {
   // Simulates 3 workers competing for 2 devices.
   // Workers 0 and 1 allocate. Worker 2 gets NoDeviceAvailableError from the
-  // allocator. It should re-queue and be served when worker 0 releases.
+  // driver. It should re-queue and be served when worker 0 releases.
   let counter = 0;
   const devices = ['sim-a', 'sim-b'];
-  const allocator: DeviceAllocator = {
-    async allocate(_c, takenDeviceIds): Promise<AllocateResult> {
+  const driver = {
+    name: 'test',
+    async allocate(_c: unknown, takenDeviceIds: ReadonlySet<string>): Promise<AllocateResult> {
       const available = devices.filter(id => !takenDeviceIds.has(id));
       if (available.length === 0) {
         throw new NoDeviceAvailableError('no device available');
@@ -94,8 +97,8 @@ test('NoDeviceAvailableError re-queues the waiter to be served on next release',
       return { deviceId, platform: 'ios' };
     },
     async release() {},
-  };
-  const pool = new DevicePool({ allocator, maxSlots: 3 });
+  } as unknown as MobilewrightDriver;
+  const pool = new DevicePool({ driver, maxSlots: 3 });
 
   const w0 = await pool.allocate({ platform: 'ios' });
   await pool.allocate({ platform: 'ios' });
@@ -116,7 +119,8 @@ test('NoDeviceAvailableError re-queues the waiter to be served on next release',
 
 test('allocation failure rejects the requesting waiter and drops the slot', async () => {
   let attempts = 0;
-  const allocator: DeviceAllocator = {
+  const driver = {
+    name: 'test',
     async allocate() {
       attempts++;
       if (attempts === 1) {
@@ -125,8 +129,8 @@ test('allocation failure rejects the requesting waiter and drops the slot', asyn
       return { deviceId: `d${attempts}`, platform: 'ios' };
     },
     async release() {},
-  };
-  const pool = new DevicePool({ allocator, maxSlots: 2 });
+  } as unknown as MobilewrightDriver;
+  const pool = new DevicePool({ driver, maxSlots: 2 });
 
   await expect(pool.allocate({ platform: 'ios' })).rejects.toThrow('boom');
 
@@ -135,8 +139,8 @@ test('allocation failure rejects the requesting waiter and drops the slot', asyn
 });
 
 test('FIFO order across multiple waiters', async () => {
-  const allocator = makeAllocator([{ deviceId: 'd1', platform: 'ios' }]);
-  const pool = new DevicePool({ allocator, maxSlots: 1 });
+  const driver = makeDriver([{ deviceId: 'd1', platform: 'ios' }]);
+  const pool = new DevicePool({ driver, maxSlots: 1 });
 
   const first = await pool.allocate({ platform: 'ios' });
 
@@ -156,8 +160,8 @@ test('FIFO order across multiple waiters', async () => {
 });
 
 test('isAppInstalled is false until recordAppInstalled is called', async () => {
-  const allocator = makeAllocator([{ deviceId: 'd1', platform: 'ios' }]);
-  const pool = new DevicePool({ allocator, maxSlots: 1 });
+  const driver = makeDriver([{ deviceId: 'd1', platform: 'ios' }]);
+  const pool = new DevicePool({ driver, maxSlots: 1 });
   const handle = await pool.allocate({ platform: 'ios' });
 
   expect(pool.isAppInstalled(handle.allocationId, 'app.ipa')).toBe(false);
@@ -166,8 +170,8 @@ test('isAppInstalled is false until recordAppInstalled is called', async () => {
 });
 
 test('install tracking persists across releases of the same slot', async () => {
-  const allocator = makeAllocator([{ deviceId: 'd1', platform: 'ios' }]);
-  const pool = new DevicePool({ allocator, maxSlots: 1 });
+  const driver = makeDriver([{ deviceId: 'd1', platform: 'ios' }]);
+  const pool = new DevicePool({ driver, maxSlots: 1 });
   const first = await pool.allocate({ platform: 'ios' });
   pool.recordAppInstalled(first.allocationId, 'app.ipa');
 
@@ -177,17 +181,18 @@ test('install tracking persists across releases of the same slot', async () => {
   expect(pool.isAppInstalled(second.allocationId, 'app.ipa')).toBe(true);
 });
 
-test('shutdown calls allocator.release for every available slot', async () => {
+test('shutdown calls driver.release for every available slot', async () => {
   const released: string[] = [];
   let counter = 0;
-  const allocator: DeviceAllocator = {
+  const driver = {
+    name: 'test',
     async allocate(): Promise<AllocateResult> {
       counter++;
       return { deviceId: `d${counter}`, platform: 'ios' };
     },
     async release(deviceId: string) { released.push(deviceId); },
-  };
-  const pool = new DevicePool({ allocator, maxSlots: 2 });
+  } as unknown as MobilewrightDriver;
+  const pool = new DevicePool({ driver, maxSlots: 2 });
 
   const a = await pool.allocate({ platform: 'ios' });
   const b = await pool.allocate({ platform: 'ios' });
@@ -199,13 +204,14 @@ test('shutdown calls allocator.release for every available slot', async () => {
 });
 
 test('shutdown rejects in-flight waiters', async () => {
-  const allocator: DeviceAllocator = {
+  const driver = {
+    name: 'test',
     async allocate() {
       return new Promise<AllocateResult>(() => {});
     },
     async release() {},
-  };
-  const pool = new DevicePool({ allocator, maxSlots: 1 });
+  } as unknown as MobilewrightDriver;
+  const pool = new DevicePool({ driver, maxSlots: 1 });
 
   const promise = pool.allocate({ platform: 'ios' });
   await Promise.resolve();
@@ -215,15 +221,16 @@ test('shutdown rejects in-flight waiters', async () => {
 });
 
 test('allocation that exceeds allocationTimeoutMs rejects with timeout error', async () => {
-  const allocator: DeviceAllocator = {
-    async allocate(_c, _t, signal) {
+  const driver = {
+    name: 'test',
+    async allocate(_c: unknown, _t: unknown, signal: AbortSignal) {
       return new Promise<AllocateResult>((_, reject) => {
         signal?.addEventListener('abort', () => reject(new Error('aborted')));
       });
     },
     async release() {},
-  };
-  const pool = new DevicePool({ allocator, maxSlots: 1, allocationTimeoutMs: 50 });
+  } as unknown as MobilewrightDriver;
+  const pool = new DevicePool({ driver, maxSlots: 1, allocationTimeoutMs: 50 });
 
   await expect(pool.allocate({ platform: 'ios' })).rejects.toThrow(/timed out/i);
 });

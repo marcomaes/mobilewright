@@ -58,6 +58,9 @@ function createMockDriver(hierarchy: ViewNode[]): MobilewrightDriver & { _tracke
   return {
     _tracker: tracker,
     _setHierarchy: (h: ViewNode[]) => { currentHierarchy = h; },
+    name: 'mock',
+    allocate: async () => ({ deviceId: 'device1', platform: 'ios' as const }),
+    release: async () => {},
     connect: async () => ({ deviceId: 'device1', platform: 'ios' as const }),
     disconnect: async () => {},
     getViewHierarchy: async () => currentHierarchy,

@@ -1,3 +1,11 @@
+## [0.0.38] (2026-05-19)
+* Feat: `config.driver` now accepts a driver instance — third-party drivers can implement `MobilewrightDriver` from `@mobilewright/protocol` without depending on the framework package
+* Feat: `MobilewrightDriver` interface now includes `allocate()`, `release()`, `setup()`, and `teardown()` — one class covers both coordinator and worker roles
+* Feat: `MobilecliDriver` and `MobileUseDriver` both implement the unified `MobilewrightDriver` interface; `MobileUseDriver` manages per-device sessions internally
+* Feat: `NoDeviceAvailableError`, `AllocationCriteria`, and `AllocateResult` are now exported from `@mobilewright/protocol` for use by third-party driver authors
+* Feat: `resolveDriver()` compat shim — the legacy `{ type: 'mobilecli' }` object form still works but logs a deprecation warning
+* Feat: `DummyDriver` reference implementation in `@mobilewright/test` — shows the minimal surface a third-party driver must implement
+
 ## [0.0.37] (2026-05-16)
 * Feat: add installApps to per-project overrides ([#133](https://github.com/mobile-next/mobilewright/pull/133))
 * Feat: export HardwareButton from @mobilewright/core and add LOCK button ([#132](https://github.com/mobile-next/mobilewright/pull/132))

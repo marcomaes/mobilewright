@@ -2,9 +2,8 @@ import type { Platform, DeviceInfo, MobilewrightDriver } from '@mobilewright/pro
 import { Device } from '@mobilewright/core';
 import { MobilecliDriver, DEFAULT_URL } from '@mobilewright/driver-mobilecli';
 import { MobileUseDriver } from '@mobilewright/driver-mobile-use';
-import { ensureMobilecliReachable } from './server.js';
-import { toArray } from './config.js';
-import type { DriverConfig } from './config.js';
+import { toArray, resolveDriver } from './config.js';
+import type { DriverConfig, MobilewrightConfig } from './config.js';
 
 export interface LaunchOptions {
   bundleId?: string;
@@ -15,7 +14,7 @@ export interface LaunchOptions {
   url?: string;
   timeout?: number;
   autoStart?: boolean;
-  driver?: DriverConfig;
+  driver?: MobilewrightDriver | DriverConfig;
 }
 
 interface PlatformLauncher {
@@ -26,7 +25,7 @@ interface PlatformLauncher {
 export interface ConnectDeviceParams {
   platform: Platform;
   deviceId: string;
-  driverConfig?: DriverConfig;
+  driverConfig?: MobilewrightDriver | DriverConfig;
   url?: string;
   timeout?: number;
 }
@@ -35,18 +34,12 @@ export interface FindDeviceParams {
   platform: Platform;
   deviceId?: string;
   deviceName?: RegExp;
-  driverConfig?: DriverConfig;
+  driverConfig?: MobilewrightDriver | DriverConfig;
   url?: string;
 }
 
-export function createDriver(driverConfig?: DriverConfig, url?: string): MobilewrightDriver {
-  if (driverConfig?.type === 'mobile-use') {
-    return new MobileUseDriver({
-      region: driverConfig.region,
-      apiKey: driverConfig.apiKey,
-    });
-  }
-  return new MobilecliDriver({ url });
+export function createDriver(driverConfig?: MobilewrightDriver | DriverConfig, url?: string): MobilewrightDriver {
+  return resolveDriver({ driver: driverConfig, url } as MobilewrightConfig);
 }
 
 export async function connectDevice(params: ConnectDeviceParams): Promise<Device> {
@@ -93,35 +86,26 @@ export async function findDevice(params: FindDeviceParams): Promise<DeviceInfo> 
 function createLauncher(platform: Platform): PlatformLauncher {
   return {
     async launch(opts: LaunchOptions = {}): Promise<Device> {
-      const driverConfig = opts.driver;
-      const url = opts.url ?? DEFAULT_URL;
-
-      let serverProcess: { kill: () => void } | undefined;
-      if (!driverConfig || driverConfig.type === 'mobilecli') {
-        const ensured = await ensureMobilecliReachable(url, { autoStart: opts.autoStart ?? true });
-        serverProcess = ensured.serverProcess ?? undefined;
-      }
+      const driver = resolveDriver({ driver: opts.driver, url: opts.url, autoStart: opts.autoStart } as MobilewrightConfig);
+      await driver.setup?.();
 
       const found = await findDevice({
         platform,
         deviceId: opts.deviceId,
         deviceName: opts.deviceName,
-        driverConfig,
-        url,
+        driverConfig: driver,
+        url: opts.url,
       });
 
       const device = await connectDevice({
         platform,
         deviceId: found.id,
-        driverConfig,
-        url,
+        driverConfig: driver,
+        url: opts.url,
         timeout: opts.timeout,
       });
 
-      if (serverProcess) {
-        const proc = serverProcess;
-        device.onClose(() => Promise.resolve(proc.kill()).then(() => undefined));
-      }
+      device.onClose(() => driver.teardown?.() ?? Promise.resolve());
 
       await installAndLaunchApps(device, opts);
       return device;

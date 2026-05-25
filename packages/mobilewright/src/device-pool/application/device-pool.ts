@@ -1,14 +1,14 @@
 import { DeviceSlot } from '../domain/device-slot.js';
 import { Allocation } from '../domain/allocation.js';
-import { NoDeviceAvailableError } from './ports.js';
+import { NoDeviceAvailableError } from '@mobilewright/protocol';
+import type { MobilewrightDriver } from '@mobilewright/protocol';
 import type {
   AllocationCriteria,
   AllocationHandle,
-  DeviceAllocator,
 } from './ports.js';
 
 export interface DevicePoolOptions {
-  allocator: DeviceAllocator;
+  driver: MobilewrightDriver;
   maxSlots: number;
   /** Per-allocation timeout in ms. Default 600_000 (10 min). */
   allocationTimeoutMs?: number;
@@ -21,7 +21,7 @@ interface Waiter {
 }
 
 export class DevicePool {
-  private readonly allocator: DeviceAllocator;
+  private readonly driver: MobilewrightDriver;
   private readonly maxSlots: number;
   private readonly allocationTimeoutMs: number;
   private readonly slots: DeviceSlot[] = [];
@@ -31,7 +31,7 @@ export class DevicePool {
   private isShutdown = false;
 
   constructor(options: DevicePoolOptions) {
-    this.allocator = options.allocator;
+    this.driver = options.driver;
     this.maxSlots = options.maxSlots;
     this.allocationTimeoutMs = options.allocationTimeoutMs ?? 600_000;
   }
@@ -62,7 +62,7 @@ export class DevicePool {
     const releases: Promise<void>[] = [];
     for (const slot of this.slots) {
       if (slot.state !== 'allocating' && slot.deviceId !== undefined) {
-        releases.push(this.allocator.release(slot.deviceId).catch(() => {}));
+        releases.push(this.driver.release(slot.deviceId).catch(() => {}));
       }
     }
     await Promise.all(releases);
@@ -157,7 +157,7 @@ export class DevicePool {
 
     let result;
     try {
-      result = await this.allocator.allocate(
+      result = await this.driver.allocate(
         waiter.criteria,
         this.takenDeviceIds(),
         abortController.signal,
@@ -194,7 +194,7 @@ export class DevicePool {
     clearTimeout(timer);
     if (!this.inFlightWaiters.delete(waiter)) {
       // Shutdown already rejected this waiter; just discard the device.
-      this.allocator.release(result.deviceId).catch(() => {});
+      this.driver.release(result.deviceId).catch(() => {});
       return;
     }
     slot.markAvailable(result.deviceId, result.platform, result.driver, result.model, result.osVersion, result.type);

@@ -1,6 +1,8 @@
 import createDebug from 'debug';
 import { execFileSync } from 'node:child_process';
 import type {
+  AllocateResult,
+  AllocationCriteria,
   AppInfo,
   ConnectionConfig,
   DeviceInfo,
@@ -22,8 +24,10 @@ import type {
   SwipeOptions,
   ViewNode,
 } from '@mobilewright/protocol';
+import { NoDeviceAvailableError } from '@mobilewright/protocol';
 import { RpcClient } from './rpc-client.js';
 import { resolveMobilecliBinary } from './resolve-binary.js';
+import { ensureMobilecliReachable, type ServerHandle } from './server.js';
 
 export const DEFAULT_URL = 'ws://localhost:12000/ws';
 
@@ -134,14 +138,70 @@ function elementToViewNode(el: MobilecliElement): ViewNode {
 const debug = createDebug('mw:driver-mobilecli');
 
 export class MobilecliDriver implements MobilewrightDriver {
+  readonly name = 'mobilecli';
+
   private session: { deviceId: string; platform: Platform; rpc: RpcClient } | null = null;
   private readonly serverUrl: string;
+  private readonly autoStart: boolean;
+  private serverHandle: ServerHandle | undefined;
 
-  constructor(opts?: { url?: string }) {
+  constructor(opts?: { url?: string; autoStart?: boolean }) {
     this.serverUrl = opts?.url ?? DEFAULT_URL;
+    this.autoStart = opts?.autoStart ?? true;
   }
 
-  // ─── Connection ──────────────────────────────────────────────
+  // ─── Pool management (coordinator-side) ─────────────────────
+
+  async setup(): Promise<void> {
+    const result = await ensureMobilecliReachable(this.serverUrl, { autoStart: this.autoStart });
+    this.serverHandle = result.serverProcess;
+  }
+
+  async teardown(): Promise<void> {
+    await this.serverHandle?.kill();
+    this.serverHandle = undefined;
+  }
+
+  async allocate(
+    criteria: AllocationCriteria,
+    takenDeviceIds: ReadonlySet<string>,
+    _signal?: AbortSignal,
+  ): Promise<AllocateResult> {
+    const devices = await this.listDevices(
+      criteria.platform ? { platform: criteria.platform } : undefined,
+    );
+
+    const namePattern = criteria.deviceNamePattern
+      ? new RegExp(criteria.deviceNamePattern)
+      : undefined;
+
+    const match = devices
+      .filter((d) => d.state === 'online')
+      .filter((d) => !takenDeviceIds.has(d.id))
+      .filter((d) => !criteria.deviceId || d.id === criteria.deviceId)
+      .filter((d) => !namePattern || namePattern.test(d.name))
+      .at(0);
+
+    if (!match) {
+      throw new NoDeviceAvailableError(
+        `no online device available matching criteria ${JSON.stringify(criteria)}`,
+      );
+    }
+    return {
+      deviceId: match.id,
+      platform: match.platform,
+      driver: this.name,
+      model: match.model,
+      osVersion: match.osVersion,
+      type: match.type,
+    };
+  }
+
+  async release(_deviceId: string): Promise<void> {
+    // Local devices don't need to be released.
+  }
+
+  // ─── Connection (worker-side) ────────────────────────────────
 
   async connect(config: ConnectionConfig): Promise<Session> {
     const url = config.url ?? this.serverUrl;
