@@ -511,9 +511,8 @@ export class MobileNextDriver implements MobilewrightDriver {
       debug('upload progress %s: %d/%d bytes (%d%%)', filename, bytesUploaded, fileInfo.size, pct);
     }, 10_000);
 
-    let response!: Response;
     try {
-      response = await fetch(upload.uploadUrl, {
+      const response = await fetch(upload.uploadUrl, {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/octet-stream',
@@ -523,11 +522,12 @@ export class MobileNextDriver implements MobilewrightDriver {
         duplex: 'half',
         signal: AbortSignal.timeout(uploadTimeout),
       } as RequestInit);
+
+      if (!response.ok) {
+        throw new Error(`Upload failed with status ${response.status}`);
+      }
     } finally {
       clearInterval(progressInterval);
-    }
-    if (!response.ok) {
-      throw new Error(`Upload failed with status ${response.status}`);
     }
     debug('upload complete, installing app (uploadId=%s)', upload.uploadId);
 

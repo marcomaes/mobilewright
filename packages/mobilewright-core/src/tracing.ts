@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto';
 import { createWriteStream } from 'node:fs';
+import { pipeline } from 'node:stream/promises';
 import { mkdir } from 'node:fs/promises';
 import { dirname } from 'node:path';
 import yazl from 'yazl';
@@ -319,13 +320,9 @@ export class Tracer {
       zipFile.addBuffer(data, `resources/${sha1}`);
     }
 
-    await new Promise<void>((resolve, reject) => {
-      zipFile.end(undefined, () => {
-        const stream = createWriteStream(outputPath);
-        zipFile.outputStream.pipe(stream);
-        stream.on('close', resolve);
-        stream.on('error', reject);
-      });
-    });
+    const writeStream = createWriteStream(outputPath);
+    const pipelinePromise = pipeline(zipFile.outputStream, writeStream);
+    zipFile.end();
+    await pipelinePromise;
   }
 }

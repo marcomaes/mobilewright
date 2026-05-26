@@ -164,7 +164,14 @@ class LocatorAssertions {
       let lastValue = '';
       await this.retryAssertion(
         async () => {
-          try { lastValue = await this.locator.getValue({ timeout: 0 }); } catch { lastValue = ''; }
+          try {
+            lastValue = await this.locator.getValue({ timeout: 0 });
+          } catch (e) {
+            if (!(e instanceof LocatorError)) {
+              throw e;
+            }
+            lastValue = '';
+          }
           return lastValue;
         },
         (value) => {
