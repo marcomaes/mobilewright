@@ -160,6 +160,14 @@ export class Locator {
     });
   }
 
+  async swipe(opts: { direction: SwipeDirection; timeout?: number }): Promise<void> {
+    return this._wrapAction('swipe', { direction: opts.direction }, async () => {
+      const node = await this.resolveActionable(opts.timeout);
+      const { x, y } = centerOf(node.bounds);
+      await this.driver.swipe(opts.direction, { startX: x, startY: y });
+    });
+  }
+
   async scrollIntoViewIfNeeded(opts?: ScrollIntoViewOptions): Promise<void> {
     return this._wrapAction('scrollIntoViewIfNeeded', { direction: opts?.direction, maxSwipes: opts?.maxSwipes }, async () => {
       const maxSwipes = opts?.maxSwipes ?? 10;
