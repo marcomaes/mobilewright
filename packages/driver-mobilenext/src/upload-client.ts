@@ -1,6 +1,33 @@
 import { randomUUID } from 'node:crypto';
 import createDebug from 'debug';
-import type { GitInfo } from './git-info.js';
+
+export interface GitInfo {
+  repoUrl?: string;
+  branch?: string;
+  commitSha?: string;
+  authorName?: string;
+  commitMessage?: string;
+}
+
+export function extractGitInfoFromReport(report: Record<string, unknown>): GitInfo | undefined {
+  const config = report['config'] as Record<string, unknown> | undefined;
+  const metadata = config?.['metadata'] as Record<string, unknown> | undefined;
+  const gitCommit = metadata?.['gitCommit'] as Record<string, unknown> | undefined;
+  if (!gitCommit) {
+    return undefined;
+  }
+
+  const author = gitCommit['author'] as Record<string, unknown> | undefined;
+  const result: GitInfo = {
+    commitSha: gitCommit['hash'] as string | undefined,
+    commitMessage: gitCommit['subject'] as string | undefined,
+    authorName: author?.['name'] as string | undefined,
+    branch: gitCommit['branch'] as string | undefined,
+  };
+
+  const hasAnyField = Object.values(result).some(v => v !== undefined);
+  return hasAnyField ? result : undefined;
+}
 
 const debug = createDebug('mw:reporter:upload');
 
@@ -33,6 +60,15 @@ interface AssetResponse {
   contentType: string;
   size: number;
   createdAt: string;
+}
+
+interface PlaywrightStats {
+  startTime: string;
+  duration: number;
+  expected: number;
+  skipped: number;
+  unexpected: number;
+  flaky: number;
 }
 
 const CONTENT_TYPE_EXTENSIONS: Record<string, string> = {
@@ -100,6 +136,8 @@ export async function uploadTestResult(params: UploadTestResultParams): Promise<
   const signal = params.timeout ? AbortSignal.timeout(params.timeout) : undefined;
   const hasGitInfo = params.gitInfo !== undefined && Object.values(params.gitInfo).some(v => v !== undefined);
 
+  const stats = params.report['stats'] as PlaywrightStats | undefined;
+
   debug('creating test result name=%s userAgent=%s', params.name ?? 'Test Run', params.userAgent);
   const createRes = await fetchFn(`${BASE_URL}/api/v1/test-results`, {
     method: 'POST',
@@ -111,6 +149,9 @@ export async function uploadTestResult(params: UploadTestResultParams): Promise<
       name: params.name ?? 'Test Run',
       userAgent: params.userAgent,
       ...(hasGitInfo ? { git: params.gitInfo } : {}),
+      ...(params.tags?.length ? { tags: params.tags } : {}),
+      ...(params.environment ? { environment: params.environment } : {}),
+      ...(stats !== undefined ? { stats } : {}),
     }),
     ...(signal && { signal }),
   });

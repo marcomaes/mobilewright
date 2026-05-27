@@ -208,6 +208,18 @@ test('defineConfig passes uploadTimeout to upload reporter options', () => {
   expect(opts.uploadTimeout).toBe(90_000);
 });
 
+test('defineConfig sets captureGitInfo when mobilenext driver is configured with testResult', () => {
+  const config = defineConfig({
+    driver: { type: 'mobilenext', apiKey: 'key', testResult: { uploadReport: 'on' } },
+  });
+  expect(config.captureGitInfo).toEqual({ commit: true });
+});
+
+test('defineConfig does not set captureGitInfo when testResult is absent', () => {
+  const config = defineConfig({ driver: { type: 'mobilenext', apiKey: 'key' } });
+  expect(config.captureGitInfo).toBeUndefined();
+});
+
 test('defineConfig accepts mobilenext driver with testResult config', () => {
   const config = defineConfig({
     driver: {

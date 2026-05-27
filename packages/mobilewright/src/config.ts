@@ -140,6 +140,9 @@ export interface MobilewrightConfig {
   globalTeardown?: string | string[];
   /** Multi-device / multi-platform project matrix. */
   projects?: MobilewrightProjectConfig[];
+
+  /** Capture git commit info and store it in report metadata. */
+  captureGitInfo?: { commit?: boolean; diff?: boolean };
 }
 
 export function toArray<T>(value: T | T[] | undefined): T[] {
@@ -181,6 +184,7 @@ function injectUploadReporter(config: MobilewrightConfig): MobilewrightConfig {
 
   return {
     ...config,
+    captureGitInfo: { commit: true },
     reporter: [
       ...reporters,
       ['json', { outputFile: jsonResultsPath }],

@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import type { Reporter, TestCase, TestResult, FullResult, FullConfig, Suite } from '@playwright/test/reporter';
 import type { MobileNextTestResultConfig } from '../config.js';
-import { uploadTestResult, getGitInfo, type UploadTestResultParams } from '@mobilewright/driver-mobilenext';
+import { uploadTestResult, extractGitInfoFromReport, type UploadTestResultParams } from '@mobilewright/driver-mobilenext';
 
 const _require = createRequire(import.meta.url);
 
@@ -53,7 +53,7 @@ export default class MobileNextUploadReporter implements Reporter {
     const userAgent = `mobilewright/${pkg.version}`;
     const rawContent = readFileSync(this.options.jsonResultsPath, 'utf8');
     const report = JSON.parse(rawContent) as Record<string, unknown>;
-    const gitInfo = getGitInfo();
+    const gitInfo = extractGitInfoFromReport(report);
 
     try {
       const uploadResult = await upload({
