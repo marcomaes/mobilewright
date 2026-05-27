@@ -164,17 +164,27 @@ function normalizeReporters(
   return reporter;
 }
 
-function injectUploadReporter(config: MobilewrightConfig): MobilewrightConfig {
+function isMobileNextWithTestResult(config: MobilewrightConfig): config is MobilewrightConfig & { driver: DriverConfigMobileNext } {
   const driver = config.driver;
   if (!driver || (driver.type !== 'mobilenext' && driver.type !== 'mobile-use')) {
-    return config;
+    return false;
   }
-  const mobileNextDriver = driver as DriverConfigMobileNext;
-  const testResult = mobileNextDriver.testResult;
-  if (!testResult || testResult.uploadReport === 'off') {
-    return config;
-  }
+  const testResult = (driver as DriverConfigMobileNext).testResult;
+  return !!testResult && testResult.uploadReport !== 'off';
+}
 
+function withCaptureGitInfo(config: MobilewrightConfig): MobilewrightConfig {
+  if (!isMobileNextWithTestResult(config)) {
+    return config;
+  }
+  return { ...config, captureGitInfo: { commit: true } };
+}
+
+function withUploadReporter(config: MobilewrightConfig): MobilewrightConfig {
+  if (!isMobileNextWithTestResult(config)) {
+    return config;
+  }
+  const mobileNextDriver = config.driver;
   const jsonResultsPath = join(
     os.tmpdir(),
     `mobilewright-results-${randomUUID()}.json`,
@@ -184,7 +194,6 @@ function injectUploadReporter(config: MobilewrightConfig): MobilewrightConfig {
 
   return {
     ...config,
-    captureGitInfo: { commit: true },
     reporter: [
       ...reporters,
       ['json', { outputFile: jsonResultsPath }],
@@ -212,7 +221,7 @@ export function defineConfig(config: MobilewrightConfig): MobilewrightConfig {
     globalTeardown: userTeardowns.length > 0 ? [...userTeardowns, ourTeardown] : ourTeardown,
   };
 
-  return injectUploadReporter(base);
+  return withUploadReporter(withCaptureGitInfo(base));
 }
 
 const CONFIG_FILES = [

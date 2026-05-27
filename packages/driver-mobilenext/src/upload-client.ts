@@ -25,8 +25,8 @@ export function extractGitInfoFromReport(report: Record<string, unknown>): GitIn
     branch: gitCommit['branch'] as string | undefined,
   };
 
-  const hasAnyField = Object.values(result).some(v => v !== undefined);
-  return hasAnyField ? result : undefined;
+  const isEmptyGitCommit = Object.values(result).every(v => v === undefined);
+  return isEmptyGitCommit ? undefined : result;
 }
 
 const debug = createDebug('mw:reporter:upload');
@@ -60,15 +60,6 @@ interface AssetResponse {
   contentType: string;
   size: number;
   createdAt: string;
-}
-
-interface PlaywrightStats {
-  startTime: string;
-  duration: number;
-  expected: number;
-  skipped: number;
-  unexpected: number;
-  flaky: number;
 }
 
 const CONTENT_TYPE_EXTENSIONS: Record<string, string> = {
@@ -136,7 +127,7 @@ export async function uploadTestResult(params: UploadTestResultParams): Promise<
   const signal = params.timeout ? AbortSignal.timeout(params.timeout) : undefined;
   const hasGitInfo = params.gitInfo !== undefined && Object.values(params.gitInfo).some(v => v !== undefined);
 
-  const stats = params.report['stats'] as PlaywrightStats | undefined;
+  const stats = params.report['stats'];
 
   debug('creating test result name=%s userAgent=%s', params.name ?? 'Test Run', params.userAgent);
   const createRes = await fetchFn(`${BASE_URL}/api/v1/test-results`, {
