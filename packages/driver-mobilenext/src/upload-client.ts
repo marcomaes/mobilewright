@@ -62,6 +62,16 @@ interface AssetResponse {
   createdAt: string;
 }
 
+// Shape of the stats object Playwright writes into report.json; forwarded verbatim to the API.
+interface PlaywrightStats {
+  startTime: string;
+  duration: number;
+  expected: number;
+  skipped: number;
+  unexpected: number;
+  flaky: number;
+}
+
 const CONTENT_TYPE_EXTENSIONS: Record<string, string> = {
   'image/png': 'png',
   'image/jpeg': 'jpg',
@@ -127,7 +137,7 @@ export async function uploadTestResult(params: UploadTestResultParams): Promise<
   const signal = params.timeout ? AbortSignal.timeout(params.timeout) : undefined;
   const hasGitInfo = params.gitInfo !== undefined && Object.values(params.gitInfo).some(v => v !== undefined);
 
-  const stats = params.report['stats'];
+  const stats = params.report['stats'] as PlaywrightStats | undefined;
 
   debug('creating test result name=%s userAgent=%s', params.name ?? 'Test Run', params.userAgent);
   const createRes = await fetchFn(`${BASE_URL}/api/v1/test-results`, {
