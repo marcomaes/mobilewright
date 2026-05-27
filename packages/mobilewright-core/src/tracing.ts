@@ -1,10 +1,4 @@
 import { createHash } from 'node:crypto';
-import { createWriteStream } from 'node:fs';
-import { pipeline } from 'node:stream/promises';
-import { mkdir } from 'node:fs/promises';
-import { dirname } from 'node:path';
-import yazl from 'yazl';
-import type { MobilewrightDriver } from '@mobilewright/protocol';
 
 // ─── Playwright-compatible trace event types ────────────────────
 
@@ -108,6 +102,16 @@ type TraceEvent =
 
 type ScreenshotCapture = { sha1: string; width: number; height: number };
 
+const DEVICE_FRAME_HTML: NodeSnapshot = [
+  'HTML', {},
+  ['HEAD', {},
+    ['STYLE', {}, 'body{margin:0;padding:0;background:#000}img{width:100%;height:100%;object-fit:contain;display:block}'],
+  ],
+  ['BODY', {},
+    ['IMG', { src: 'screenshot.png' }],
+  ],
+];
+
 // ─── Tracer ─────────────────────────────────────────────────────
 
 export class Tracer {
@@ -115,9 +119,8 @@ export class Tracer {
   private resources: Map<string, Buffer> = new Map();
   private callCounter = 0;
   private startMonotonic: number;
-  private driver: MobilewrightDriver | null = null;
 
-  constructor() {
+  constructor(private readonly takeScreenshot: () => Promise<Buffer>) {
     this.startMonotonic = Date.now();
 
     this.events.push({
@@ -133,8 +136,12 @@ export class Tracer {
     });
   }
 
-  setDriver(driver: MobilewrightDriver): void {
-    this.driver = driver;
+  serializeEvents(): string {
+    return this.events.map(e => JSON.stringify(e)).join('\n');
+  }
+
+  get resourceEntries(): ReadonlyMap<string, Buffer> {
+    return this.resources;
   }
 
   private monotonicTime(): number {
@@ -158,12 +165,8 @@ export class Tracer {
   }
 
   private async captureScreenshot(): Promise<ScreenshotCapture | null> {
-    if (!this.driver) {
-      return null;
-    }
-
     try {
-      const screenshot = await this.driver.screenshot();
+      const screenshot = await this.takeScreenshot();
       const sharp = (await import('sharp')).default;
       const metadata = await sharp(screenshot).metadata();
       const sha1 = this.addResource(screenshot);
@@ -223,19 +226,26 @@ export class Tracer {
         wallTime: Date.now(),
         collectionTime: 0,
         doctype: 'html',
-        html: [
-          'HTML', {},
-          ['HEAD', {},
-            ['STYLE', {}, 'body{margin:0;padding:0;background:#000}img{width:100%;height:100%;object-fit:contain;display:block}'],
-          ],
-          ['BODY', {},
-            ['IMG', { src: 'screenshot.png' }],
-          ],
-        ],
+        html: DEVICE_FRAME_HTML,
         resourceOverrides: [{ url: 'screenshot.png', sha1: shot.sha1 }],
         viewport: { width: shot.width, height: shot.height },
         isMainFrame: true,
       },
+    });
+  }
+
+  private async recordAfterSnapshot(callId: string, error?: Error): Promise<void> {
+    const shot = await this.captureScreenshot();
+    if (shot) {
+      this.pushScreencastFrame(shot);
+      this.pushFrameSnapshot(`after@${callId}`, callId, shot);
+    }
+    this.events.push({
+      type: 'after',
+      callId,
+      endTime: this.monotonicTime(),
+      ...(shot && { afterSnapshot: `after@${callId}` }),
+      ...(error && { error: { message: error.message, stack: error.stack } }),
     });
   }
 
@@ -268,61 +278,12 @@ export class Tracer {
 
     try {
       const result = await fn();
-
-      const afterShot = await this.captureScreenshot();
-      if (afterShot) {
-        this.pushScreencastFrame(afterShot);
-        this.pushFrameSnapshot(`after@${callId}`, callId, afterShot);
-      }
-
-      this.events.push({
-        type: 'after',
-        callId,
-        endTime: this.monotonicTime(),
-        ...(afterShot && { afterSnapshot: `after@${callId}` }),
-      });
-
+      await this.recordAfterSnapshot(callId);
       return result;
     } catch (error) {
-      const errorShot = await this.captureScreenshot();
-      if (errorShot) {
-        this.pushScreencastFrame(errorShot);
-        this.pushFrameSnapshot(`after@${callId}`, callId, errorShot);
-      }
-
       const err = error instanceof Error ? error : new Error(String(error));
-
-      this.events.push({
-        type: 'after',
-        callId,
-        endTime: this.monotonicTime(),
-        ...(errorShot && { afterSnapshot: `after@${callId}` }),
-        error: {
-          message: err.message,
-          stack: err.stack,
-        },
-      });
-
+      await this.recordAfterSnapshot(callId, err);
       throw error;
     }
-  }
-
-  async save(outputPath: string): Promise<void> {
-    await mkdir(dirname(outputPath), { recursive: true });
-
-    const zipFile = new yazl.ZipFile();
-
-    const traceContent = this.events.map(e => JSON.stringify(e)).join('\n');
-    zipFile.addBuffer(Buffer.from(traceContent), 'trace.trace');
-    zipFile.addBuffer(Buffer.from(''), 'trace.network');
-
-    for (const [sha1, data] of this.resources) {
-      zipFile.addBuffer(data, `resources/${sha1}`);
-    }
-
-    const writeStream = createWriteStream(outputPath);
-    const pipelinePromise = pipeline(zipFile.outputStream, writeStream);
-    zipFile.end();
-    await pipelinePromise;
   }
 }

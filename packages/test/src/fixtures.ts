@@ -12,10 +12,21 @@ import {
   toArray,
   type DevicePoolClient,
 } from 'mobilewright';
-import { expect, Tracer } from '@mobilewright/core';
-import type { Device, Screen } from '@mobilewright/core';
+import { expect } from '@mobilewright/core';
+import type { Device, Screen, Tracer } from '@mobilewright/core';
+import { saveTrace } from './saveTrace.js';
 
 type TraceMode = 'on' | 'off' | 'retain-on-failure' | 'on-first-retry';
+
+function tracingIsActive(mode: TraceMode, retry: number): boolean {
+  return mode === 'on' || mode === 'retain-on-failure' || (mode === 'on-first-retry' && retry === 1);
+}
+
+function shouldPersistTrace(mode: TraceMode, retry: number, testFailed: boolean): boolean {
+  return mode === 'on'
+    || (mode === 'retain-on-failure' && testFailed)
+    || (mode === 'on-first-retry' && retry === 1);
+}
 
 const debug = createDebug('mw:test:fixtures');
 
@@ -101,7 +112,6 @@ export const test = base.extend<MobilewrightTestFixtures>({
     if (merged.platform !== 'ios' && merged.platform !== 'android') {
       throw new Error(`Unsupported platform: "${merged.platform}". Must be "ios" or "android".`);
     }
-
 
     for (const appPath of toArray(merged.installApps)) {
       assertValidZipFile(appPath);
@@ -194,14 +204,10 @@ export const test = base.extend<MobilewrightTestFixtures>({
     // ── Tracing ──────────────────────────────────────────────
     const config = await loadConfig(process.cwd(), testInfo.config.configFile);
     const traceMode: TraceMode = config.trace ?? 'off';
-    const shouldTrace = traceMode === 'on'
-      || traceMode === 'retain-on-failure'
-      || (traceMode === 'on-first-retry' && testInfo.retry === 1);
 
     let tracer: Tracer | null = null;
-    if (shouldTrace) {
-      tracer = new Tracer();
-      device.setTracer(tracer);
+    if (tracingIsActive(traceMode, testInfo.retry)) {
+      tracer = device.enableTracing();
     }
 
     await use(device.screen);
@@ -209,18 +215,14 @@ export const test = base.extend<MobilewrightTestFixtures>({
     // ── Teardown: tracing ────────────────────────────────────
     if (tracer) {
       const failed = testInfo.status !== testInfo.expectedStatus;
-      const shouldSaveTrace = traceMode === 'on'
-        || (traceMode === 'retain-on-failure' && failed)
-        || (traceMode === 'on-first-retry' && testInfo.retry === 1);
-
-      if (shouldSaveTrace) {
+      if (shouldPersistTrace(traceMode, testInfo.retry, failed)) {
         try {
           await mkdir(testInfo.outputDir, { recursive: true });
           const tracePath = join(testInfo.outputDir, 'trace.zip');
-          await tracer.save(tracePath);
+          await saveTrace(tracer, tracePath);
           await testInfo.attach('trace', { path: tracePath, contentType: 'application/zip' });
-        } catch {
-          // Best effort
+        } catch (err) {
+          debug('failed to save trace: %o', err);
         }
       }
     }

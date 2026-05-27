@@ -12,7 +12,7 @@ import type {
 import { Screen } from './screen.js';
 import type { LocatorOptions } from './locator.js';
 import { retryUntil } from './poll.js';
-import type { Tracer } from './tracing.js';
+import { Tracer } from './tracing.js';
 
 const debug = createDebug('mw:device');
 
@@ -34,10 +34,10 @@ export class Device {
     this.opts = opts;
   }
 
-  setTracer(tracer: Tracer): void {
-    this._tracer = tracer;
-    tracer.setDriver(this.driver);
-    this._screen = null; // reset so next access picks up tracer
+  enableTracing(): Tracer {
+    this._tracer = new Tracer(() => this.driver.screenshot());
+    this._screen = null;
+    return this._tracer;
   }
 
   /** Register a callback to run on close(). Used by launchers for cleanup. */
