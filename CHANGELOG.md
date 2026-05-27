@@ -1,10 +1,23 @@
-## [0.0.38] (2026-05-19)
+## [0.0.40] (2026-05-20)
 * Feat: `config.driver` now accepts a driver instance — third-party drivers can implement `MobilewrightDriver` from `@mobilewright/protocol` without depending on the framework package
 * Feat: `MobilewrightDriver` interface now includes `allocate()`, `release()`, `setup()`, and `teardown()` — one class covers both coordinator and worker roles
-* Feat: `MobilecliDriver` and `MobileUseDriver` both implement the unified `MobilewrightDriver` interface; `MobileUseDriver` manages per-device sessions internally
+* Feat: `MobilecliDriver` and `MobileNextDriver` both implement the unified `MobilewrightDriver` interface; `MobileNextDriver` manages per-device sessions internally
 * Feat: `NoDeviceAvailableError`, `AllocationCriteria`, and `AllocateResult` are now exported from `@mobilewright/protocol` for use by third-party driver authors
 * Feat: `resolveDriver()` compat shim — the legacy `{ type: 'mobilecli' }` object form still works but logs a deprecation warning
 * Feat: `DummyDriver` reference implementation in `@mobilewright/test` — shows the minimal surface a third-party driver must implement
+
+## [0.0.39] (2026-05-21)
+* Feat: add test step instrumentation for HTML reporter ([#144](https://github.com/mobile-next/mobilewright/pull/144))
+* Feat: add Dockerfile for mobilewright image, multi-arch for arm64 and amd64 ([#143](https://github.com/mobile-next/mobilewright/pull/143))
+* Fix(locator): `isVisible()` no longer swallows driver/session errors — only returns `false` for element-not-found failures, rethrows all other errors ([#138](https://github.com/mobile-next/mobilewright/pull/138)), thanks to [@JustasMonkev](https://github.com/JustasMonkev)
+
+## [0.0.38] (2026-05-17)
+* Fix(ios): call `getForegroundApp()` before `launchApp()` in mobilecli driver to ensure DeviceKit is running first, preventing a race where its startup minimizes the newly-launched app ([#89](https://github.com/mobile-next/mobilewright/issues/89))
+* Fix(android): using instruments to get view tree, solves bug when constant UI change would fail "uiautomator dump" (fix is in mobilecli 0.3.74)
+* General: skip redundant `mobilecli devices` shell-outs in `connect()` and `installApp()` when device type is already known, reducing test startup time by ~4s
+* General: break early if installApps points to non-zip containers, before allocating devices
+* General: added plenty of verbose logs when `DEBUG=mw:*`
+>>>>>>> main
 
 ## [0.0.37] (2026-05-16)
 * Feat: add installApps to per-project overrides ([#133](https://github.com/mobile-next/mobilewright/pull/133))

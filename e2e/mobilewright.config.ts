@@ -1,7 +1,7 @@
 import { defineConfig } from 'mobilewright';
 import type { MobilewrightConfig } from 'mobilewright';
 import { MobilecliDriver } from '@mobilewright/driver-mobilecli';
-import { MobileUseDriver } from '@mobilewright/driver-mobile-use';
+import { MobileNextDriver } from '@mobilewright/driver-mobilenext';
 import type { MobilewrightDriver } from '@mobilewright/protocol';
 
 function resolveDriver(): MobilewrightDriver {
@@ -9,17 +9,17 @@ function resolveDriver(): MobilewrightDriver {
   console.log(`Using driver: ${name}`);
 
   switch (name) {
-    case 'mobile-use':
-      if (!process.env['MOBILE_USE_API_KEY']) {
-        throw new Error('MOBILE_USE_API_KEY is required for mobile-use driver');
+    case 'mobilenext':
+      if (!process.env['MOBILENEXT_API_KEY']) {
+        throw new Error('MOBILENEXT_API_KEY is required for mobilenext driver');
       }
-      return new MobileUseDriver({ apiKey: process.env['MOBILE_USE_API_KEY'] });
+      return new MobileNextDriver({ apiKey: process.env['MOBILENEXT_API_KEY'] });
 
     case 'mobilecli':
       return new MobilecliDriver();
 
     default:
-      throw new Error(`Unknown driver: ${name}. Use 'mobilecli' or 'mobile-use'`);
+      throw new Error(`Unknown driver: ${name}. Use 'mobilecli' or 'mobilenext'`);
   }
 }
 

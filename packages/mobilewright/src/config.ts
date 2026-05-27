@@ -4,7 +4,7 @@ import { pathToFileURL } from 'node:url';
 import { createRequire } from 'node:module';
 import type { MobilewrightDriver } from '@mobilewright/protocol';
 import { MobilecliDriver } from '@mobilewright/driver-mobilecli';
-import { MobileUseDriver } from '@mobilewright/driver-mobile-use';
+import { MobileNextDriver } from '@mobilewright/driver-mobilenext';
 
 const _require = createRequire(import.meta.url);
 
@@ -52,13 +52,13 @@ export interface DriverConfigMobilecli {
   type: 'mobilecli';
 }
 
-export interface DriverConfigMobileUse {
-  type: 'mobile-use';
+export interface DriverConfigMobileNext {
+  type: 'mobilenext' | 'mobile-use';
   region?: string;
   apiKey?: string;
 }
 
-export type DriverConfig = DriverConfigMobilecli | DriverConfigMobileUse;
+export type DriverConfig = DriverConfigMobilecli | DriverConfigMobileNext;
 
 export interface MobilewrightConfig {
   // ── Mobile-specific ─────────────────────────────────────────
@@ -85,7 +85,7 @@ export interface MobilewrightConfig {
   /**
    * Driver to use. Pass an instance for custom/third-party drivers:
    *   driver: new MobilecliDriver()
-   *   driver: new MobileUseDriver({ apiKey })
+   *   driver: new MobileNextDriver({ apiKey })
    * The legacy object form `{ type: 'mobilecli' }` still works but is deprecated.
    */
   driver?: MobilewrightDriver | DriverConfig;
@@ -161,7 +161,7 @@ export function resolveDriver(config: MobilewrightConfig): MobilewrightDriver {
   if (legacyConfig) {
     console.warn(
       `[mobilewright] config.driver as an object ({ type: '${type}' }) is deprecated. ` +
-      `Pass a driver instance instead, e.g. new ${type === 'mobilecli' ? 'MobilecliDriver' : 'MobileUseDriver'}()`,
+      `Pass a driver instance instead, e.g. new ${type === 'mobilecli' ? 'MobilecliDriver' : 'MobileNextDriver'}()`,
     );
   }
 
@@ -169,9 +169,9 @@ export function resolveDriver(config: MobilewrightConfig): MobilewrightDriver {
     return new MobilecliDriver({ url: config.url, autoStart: config.autoStart });
   }
 
-  if (type === 'mobile-use') {
-    const mobileUseConfig = legacyConfig as DriverConfigMobileUse;
-    return new MobileUseDriver({ region: mobileUseConfig.region, apiKey: mobileUseConfig.apiKey });
+  if (type === 'mobile-use' || type === 'mobilenext') {
+    const mobileNextConfig = legacyConfig as DriverConfigMobileNext;
+    return new MobileNextDriver({ region: mobileNextConfig.region, apiKey: mobileNextConfig.apiKey });
   }
 
   throw new Error(`[mobilewright] Unknown driver type: "${(legacyConfig as DriverConfig).type}"`);

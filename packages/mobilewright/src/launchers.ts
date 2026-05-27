@@ -1,7 +1,6 @@
-import type { Platform, DeviceInfo, MobilewrightDriver } from '@mobilewright/protocol';
+import type { Platform, DeviceInfo, DeviceType, MobilewrightDriver } from '@mobilewright/protocol';
 import { Device } from '@mobilewright/core';
 import { MobilecliDriver, DEFAULT_URL } from '@mobilewright/driver-mobilecli';
-import { MobileUseDriver } from '@mobilewright/driver-mobile-use';
 import { toArray, resolveDriver } from './config.js';
 import type { DriverConfig, MobilewrightConfig } from './config.js';
 
@@ -25,6 +24,7 @@ interface PlatformLauncher {
 export interface ConnectDeviceParams {
   platform: Platform;
   deviceId: string;
+  deviceType?: DeviceType;
   driverConfig?: MobilewrightDriver | DriverConfig;
   url?: string;
   timeout?: number;
@@ -44,13 +44,14 @@ export function createDriver(driverConfig?: MobilewrightDriver | DriverConfig, u
 
 export async function connectDevice(params: ConnectDeviceParams): Promise<Device> {
   // URL is baked into the driver at construction time; don't override it here.
-  // Passing mobilecli's default URL into MobileUseDriver.connect() would send
+  // Passing mobilecli's default URL into MobileNextDriver.connect() would send
   // requests to the wrong server.
   const driver = createDriver(params.driverConfig, params.url);
   const device = new Device(driver);
   await device.connect({
     platform: params.platform,
     deviceId: params.deviceId,
+    deviceType: params.deviceType,
     timeout: params.timeout,
   });
   return device;
