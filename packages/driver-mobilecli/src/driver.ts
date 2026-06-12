@@ -464,13 +464,10 @@ export class MobilecliDriver implements MobilewrightDriver {
         // No foreground app yet — fine, we just need DeviceKit running.
       }
     }
-    if (opts?.activity) {
-      // TODO: pass the requested activity through to mobilecli once supported.
-      debug('launch activity %s requested (not yet implemented)', opts.activity);
-    }
     await this.call('device.apps.launch', {
       bundleId,
       ...(opts?.locales && { locales: opts.locales }),
+      ...(opts?.activity && { activity: opts.activity }),
     });
     debug('launched %s', bundleId);
   }

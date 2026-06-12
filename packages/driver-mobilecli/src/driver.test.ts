@@ -219,6 +219,41 @@ test.describe('MobilecliDriver.installApp()', () => {
   });
 });
 
+test.describe('MobilecliDriver.launchApp()', () => {
+  function launchCallParams(calls: RecordedCall[]): Record<string, unknown> {
+    const launch = calls.find((c) => c.method === 'device.apps.launch');
+    if (!launch) {
+      throw new Error('device.apps.launch was never called');
+    }
+    return launch.params;
+  }
+
+  test('forwards an explicit activity to device.apps.launch', async () => {
+    const driver = createDriverWithSession({ platform: 'android', deviceType: 'emulator' });
+    const calls = recordRpc(driver, {});
+
+    await driver.launchApp('com.example.app', { activity: '.DebugActivity' });
+
+    expect(launchCallParams(calls)).toEqual({
+      deviceId: SIMULATOR_DEVICE_ID,
+      bundleId: 'com.example.app',
+      activity: '.DebugActivity',
+    });
+  });
+
+  test('omits activity from device.apps.launch when not provided', async () => {
+    const driver = createDriverWithSession({ platform: 'android', deviceType: 'emulator' });
+    const calls = recordRpc(driver, {});
+
+    await driver.launchApp('com.example.app');
+
+    expect(launchCallParams(calls)).toEqual({
+      deviceId: SIMULATOR_DEVICE_ID,
+      bundleId: 'com.example.app',
+    });
+  });
+});
+
 test.describe('MobilecliDriver.webViewBridge', () => {
   test('listWebViews maps device.webview.list entries to WebViewInfo', async () => {
     const driver = createDriverWithSession();
