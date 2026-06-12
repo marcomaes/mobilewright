@@ -454,6 +454,9 @@ export class MobileNextDriver implements MobilewrightDriver {
   // ─── Apps ───────────────────────────────────────────────────
 
   async launchApp(bundleId: string, opts?: LaunchOptions): Promise<void> {
+    if (opts?.activity) {
+      // TODO: pass the requested activity through to mobilenext once supported.
+    }
     await this.call('device.apps.launch', {
       bundleId,
       ...(opts?.locales && { locales: opts.locales }),

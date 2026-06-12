@@ -59,6 +59,8 @@ export interface LaunchOptions {
   locales?: string[];
   /** Skip waiting for the launched app to appear in foreground (default: false) */
   noWaitAfter?: boolean;
+  /** Android: explicit activity to launch (e.g. '.BasicUIActivity') */
+  activity?: string;
 }
 
 // ─── Connection ──────────────────────────────────────────────────
