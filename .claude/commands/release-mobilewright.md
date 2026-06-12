@@ -4,6 +4,8 @@ Prepare a mobilewright release by updating CHANGELOG.md with the next patch vers
 
 ### 1. Verify version consistency
 
+- Make sure you are currently on the main branch, otherwise stop.
+- Make sure there are no staged or modified file, the checkout is clear. Otherwise, stop.
 - Run `git tag --sort=-version:refname | head -1` to get the latest git tag (e.g. `v0.0.35`)
 - Read the first line of `CHANGELOG.md` to extract the version there (e.g. `## [0.0.35]`)
 - If they do not match, stop and report the mismatch. Do not proceed.
@@ -42,14 +44,12 @@ Use the existing CHANGELOG.md format:
 - Omit chore/ci/docs commits that are not user-facing unless they are significant
 - Prepend the new entry at the top of CHANGELOG.md, above the previous `## [...]` line
 
-### 6. Stop — do not commit
+### 6. Show
 
-Display the new CHANGELOG.md entry and remind the human to review and commit manually when ready.
-The suggested commit and tag commands to show the user:
+Display the new CHANGELOG.md entries and ask the human to review. Present two options: 1. Looks good to me, and 2. Let me edit.
+If the user chooses option 1, then continue to step 7, otherwise stop.
 
-```
-git add CHANGELOG.md
-git commit -m "chore: update changelog for v0.0.36"
-git tag v0.0.36
-git push && git push --tags
-```
+### 7. Create branch
+
+User approved, create a new branch called "docs-changelog-$major-$minor-$patch" and commit CHANGELOG.md on it, then create a pr.
+
