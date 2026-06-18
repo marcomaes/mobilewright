@@ -1,6 +1,6 @@
 # Mobilewright
 
-[![npm](https://img.shields.io/npm/dw/mobilewright?style=flat-square&label=npm%20downloads)](https://www.npmjs.com/package/mobilewright)
+[![npm](https://img.shields.io/npm/dm/mobilewright?style=flat-square&label=npm%20downloads)](https://www.npmjs.com/package/mobilewright)
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue?style=flat-square)](LICENSE)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.4+-3178C6?style=flat-square&logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
 
