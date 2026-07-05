@@ -64,15 +64,19 @@ async function attemptWithRetry(device: Device): Promise<{ screenshotBuffer: Buf
   for (let i = 0; i < MAX_RETRIES; i++) {
     try {
       return await withTimeout(
-        Promise.all([device.screen.screenshot(), device.screen.viewTree(), device.screenSize()]).then(
-          ([screenshotBuffer, tree, size]) => ({ screenshotBuffer, tree, size }),
-        ),
+        (async () => {
+          const screenshotBuffer = await device.screen.screenshot();
+          const tree = await device.screen.viewTree();
+          const size = await device.screenSize();
+          return { screenshotBuffer, tree, size };
+        })(),
         ATTEMPT_TIMEOUT_MS,
         `Device operation timed out after ${ATTEMPT_TIMEOUT_MS}ms`,
       );
     } catch (err) {
       lastErr = err;
       logger.warn(`Inspect attempt ${i + 1}/${MAX_RETRIES} failed: ${(err as Error).message}`);
+      if ((err as Error).message.includes('timed out')) break;
       if (i < MAX_RETRIES - 1) await new Promise(r => setTimeout(r, RETRY_DELAY_MS));
     }
   }
