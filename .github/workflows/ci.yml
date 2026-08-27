@@ -28,6 +28,7 @@ jobs:
           node-version: 24
       - run: npm ci --ignore-scripts
       - run: npm audit
+      - run: node scripts/sync-playwright-injected-script.mjs
       - run: npm run build
       - run: npm run lint
       - run: npm test
