@@ -23,6 +23,9 @@ test-results/
 # Hand-written declaration files — keep these
 !packages/*/src/playwright.d.ts
 
+# Generated from the installed playwright-core (see scripts/sync-playwright-injected-script.mjs)
+packages/mobilewright-core/src/generated/
+
 # TypeScript build artifacts emitted outside dist/
 packages/*/src/**/*.js
 packages/*/src/**/*.js.map
