@@ -11,7 +11,7 @@
     "packages/*"
   ],
   "scripts": {
-    "postinstall": "node scripts/sync-playwright-injected-script.mjs",
+    "sync:playwright": "node scripts/sync-playwright-injected-script.mjs",
     "build": "tsc -b",
     "example": "npm run build && tsx",
     "test": "playwright test --config=tests/mobilewright.config.ts",
