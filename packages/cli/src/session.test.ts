@@ -22,9 +22,9 @@ function inTempSessionDir(fn: (dir: string) => void): void {
 test('a session round-trips through disk and a missing one starts empty', () => {
   inTempSessionDir(() => {
     expect(loadSession('fresh')).toEqual({ refs: {} });
-    saveSession('fresh', { deviceId: 'abc', platform: 'ios', refs: { e1: { x: 0, y: 0, width: 1, height: 1 } } });
+    saveSession('fresh', { deviceId: 'abc', platform: 'ios', refs: { e1: { bounds: { x: 0, y: 0, width: 1, height: 1 }, locator: 'screen' } } });
     expect(loadSession('fresh').deviceId).toBe('abc');
-    expect(loadSession('fresh').refs['e1']).toEqual({ x: 0, y: 0, width: 1, height: 1 });
+    expect(loadSession('fresh').refs['e1'].bounds).toEqual({ x: 0, y: 0, width: 1, height: 1 });
   });
 });
 
