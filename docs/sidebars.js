@@ -10,6 +10,7 @@ const sidebars = {
         'getting-started/writing-tests',
         'getting-started/running-tests',
         'getting-started/ci',
+        'getting-started/windows',
       ],
     },
     {
