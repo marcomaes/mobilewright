@@ -13,8 +13,8 @@ import {
   type AllocationCriteria,
   type AllocationHandle,
 } from 'mobilewright';
-import { expect, setSoftFailureHandler } from '@mobilewright/core';
-import type { Device, Screen } from '@mobilewright/core';
+import { expect, setSoftFailureHandler, setDefaultStepFn } from '@mobilewright/core';
+import type { Device, Screen, StepFn } from '@mobilewright/core';
 import {
   assertValidZipFile,
   mergeDeviceConfig,
@@ -156,7 +156,9 @@ export const test = base.extend<MobilewrightTestFixtures>({
         await device.launchApp(bundleId);
       }
 
-      device.setStepFn((title, fn, location) => (base.step as any)(title, fn, { location }));
+      const stepFn: StepFn = (title, fn, location) => (base.step as any)(title, fn, { location });
+      device.setStepFn(stepFn);
+      setDefaultStepFn(stepFn);
 
       await use(device);
     } finally {

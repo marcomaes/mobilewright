@@ -8,7 +8,7 @@ import type {
 } from '@mobilewright/protocol';
 import { Locator } from './locator.js';
 import type { StepFn } from './locator.js';
-import { expect as mwExpect, ExpectError, setSoftFailureHandler } from './expect.js';
+import { expect as mwExpect, ExpectError, setSoftFailureHandler, setDefaultStepFn } from './expect.js';
 
 function node(
   overrides: Partial<ViewNode> & { type: string },
@@ -1019,5 +1019,50 @@ test.describe('expect.soft', () => {
   test('throws like a hard assertion when no runner installed a handler', () => {
     setSoftFailureHandler(throwLikeAHardAssertion);
     expect(() => mwExpect.soft(1).toBe(2)).toThrow(ExpectError);
+  });
+});
+
+// Value assertions (expect(42).toBe(42)) have no locator/page to source a
+// _stepFn from, so they used to report no step at all, pass or fail — unlike
+// LocatorAssertions/PageAssertions/WebLocatorAssertions and unlike real
+// Playwright's own expect(), which reports every matcher as a step. This
+// exercises the fix: a runner-installed defaultStepFn now covers plain values
+// too, while still throwing synchronously (unchanged) so unawaited call sites
+// like `expect(await x.count()).toBeGreaterThan(0)` keep working.
+test.describe('value assertions report a reporter step', () => {
+  test.afterEach(() => {
+    setDefaultStepFn(null);
+  });
+
+  test('records a step for a passing value assertion', () => {
+    const { stepFn, titles } = recordingStepFn();
+    setDefaultStepFn(stepFn);
+
+    mwExpect(2).toBeGreaterThan(1);
+
+    expect(titles).toContain('expect.toBeGreaterThan()');
+  });
+
+  test('records a step for a failing value assertion, and still throws synchronously', () => {
+    const { stepFn, titles } = recordingStepFn();
+    setDefaultStepFn(stepFn);
+
+    expect(() => mwExpect(1).toBeGreaterThan(2)).toThrow('Expected 1 > 2');
+    expect(titles).toContain('expect.toBeGreaterThan()');
+  });
+
+  test('uses the custom message as the step title, like locator assertions', () => {
+    const { stepFn, titles } = recordingStepFn();
+    setDefaultStepFn(stepFn);
+
+    mwExpect(2, 'should be greater than one').toBeGreaterThan(1);
+
+    expect(titles).toContain('should be greater than one');
+  });
+
+  test('reports nothing when no runner installed a defaultStepFn', () => {
+    setDefaultStepFn(null);
+    expect(() => mwExpect(1).toBe(1)).not.toThrow();
+    expect(() => mwExpect(1).toBeGreaterThan(2)).toThrow(ExpectError);
   });
 });

@@ -35,6 +35,16 @@ export function setSoftFailureHandler(handler: SoftFailureHandler): void {
   softFailureHandler = handler;
 }
 
+// ValueAssertions (plain values, e.g. expect(42).toBe(42)) has no locator/page to
+// source a _stepFn from, unlike LocatorAssertions/PageAssertions/WebLocatorAssertions.
+// Mirrors softFailureHandler: the test runner installs this once per worker so plain
+// value matchers report a reporter step too, same as Playwright's own expect() does.
+let defaultStepFn: StepFn | null = null;
+
+export function setDefaultStepFn(fn: StepFn | null): void {
+  defaultStepFn = fn;
+}
+
 /**
  * Playwright-style expect for mobile locators, web locators, pages, and plain values.
  *
@@ -417,40 +427,44 @@ class ValueAssertions<T> {
     private readonly negated: boolean,
   ) {}
 
+  // Set by withMessage() / withSoft() on the expect() Proxy.
+  _message?: string;
+  _soft?: boolean;
+
   get not(): ValueAssertions<T> {
     return new ValueAssertions(this.actual, !this.negated);
   }
 
   toBe(expected: T): void {
     const pass = Object.is(this.actual, expected);
-    this.assert(pass, `Expected ${fmt(expected)}, but received ${fmt(this.actual)}`);
+    this.assert('toBe', pass, `Expected ${fmt(expected)}, but received ${fmt(this.actual)}`);
   }
 
   toEqual(expected: T): void {
     const pass = JSON.stringify(this.actual) === JSON.stringify(expected);
-    this.assert(pass, `Expected ${fmt(expected)}, but received ${fmt(this.actual)}`);
+    this.assert('toEqual', pass, `Expected ${fmt(expected)}, but received ${fmt(this.actual)}`);
   }
 
   toBeTruthy(): void {
-    this.assert(!!this.actual, `Expected truthy, but received ${fmt(this.actual)}`);
+    this.assert('toBeTruthy', !!this.actual, `Expected truthy, but received ${fmt(this.actual)}`);
   }
 
   toBeFalsy(): void {
-    this.assert(!this.actual, `Expected falsy, but received ${fmt(this.actual)}`);
+    this.assert('toBeFalsy', !this.actual, `Expected falsy, but received ${fmt(this.actual)}`);
   }
 
   toBeGreaterThan(expected: number): void {
-    this.assert((this.actual as number) > expected, `Expected ${fmt(this.actual)} > ${expected}`);
+    this.assert('toBeGreaterThan', (this.actual as number) > expected, `Expected ${fmt(this.actual)} > ${expected}`);
   }
 
   toBeLessThan(expected: number): void {
-    this.assert((this.actual as number) < expected, `Expected ${fmt(this.actual)} < ${expected}`);
+    this.assert('toBeLessThan', (this.actual as number) < expected, `Expected ${fmt(this.actual)} < ${expected}`);
   }
 
   toBeCloseTo(expected: number, precision = 2): void {
     const tolerance = Math.pow(10, -precision) / 2;
     const pass = Math.abs((this.actual as number) - expected) < tolerance;
-    this.assert(pass, `Expected ${fmt(this.actual)} to be close to ${expected} (precision ${precision})`);
+    this.assert('toBeCloseTo', pass, `Expected ${fmt(this.actual)} to be close to ${expected} (precision ${precision})`);
   }
 
   toContain(expected: unknown): void {
@@ -458,73 +472,73 @@ class ValueAssertions<T> {
     const pass = Array.isArray(actual)
       ? actual.includes(expected)
       : typeof actual === 'string' ? actual.includes(expected as string) : false;
-    this.assert(pass, `Expected ${fmt(this.actual)} to contain ${fmt(expected)}`);
+    this.assert('toContain', pass, `Expected ${fmt(this.actual)} to contain ${fmt(expected)}`);
   }
 
   toBeNull(): void {
-    this.assert(this.actual === null, `Expected null, but received ${fmt(this.actual)}`);
+    this.assert('toBeNull', this.actual === null, `Expected null, but received ${fmt(this.actual)}`);
   }
 
   toBeUndefined(): void {
-    this.assert(this.actual === undefined, `Expected undefined, but received ${fmt(this.actual)}`);
+    this.assert('toBeUndefined', this.actual === undefined, `Expected undefined, but received ${fmt(this.actual)}`);
   }
 
   toMatch(pattern: RegExp | string): void {
     const str = String(this.actual);
     const regex = typeof pattern === 'string' ? new RegExp(pattern) : pattern;
-    this.assert(regex.test(str), `Expected ${fmt(this.actual)} to match ${regex}`);
+    this.assert('toMatch', regex.test(str), `Expected ${fmt(this.actual)} to match ${regex}`);
   }
 
   toBeInstanceOf(expected: Function): void {
     const pass = this.actual instanceof expected;
-    this.assert(pass, `Expected instance of ${expected.name}, but received ${fmt(this.actual)}`);
+    this.assert('toBeInstanceOf', pass, `Expected instance of ${expected.name}, but received ${fmt(this.actual)}`);
   }
 
   toBeDefined(): void {
-    this.assert(this.actual !== undefined, 'Expected defined, but received undefined');
+    this.assert('toBeDefined', this.actual !== undefined, 'Expected defined, but received undefined');
   }
 
   toBeGreaterThanOrEqual(expected: number): void {
-    this.assert((this.actual as number) >= expected, `Expected ${fmt(this.actual)} >= ${expected}`);
+    this.assert('toBeGreaterThanOrEqual', (this.actual as number) >= expected, `Expected ${fmt(this.actual)} >= ${expected}`);
   }
 
   toBeLessThanOrEqual(expected: number): void {
-    this.assert((this.actual as number) <= expected, `Expected ${fmt(this.actual)} <= ${expected}`);
+    this.assert('toBeLessThanOrEqual', (this.actual as number) <= expected, `Expected ${fmt(this.actual)} <= ${expected}`);
   }
 
   toBeNaN(): void {
-    this.assert(Number.isNaN(this.actual), `Expected NaN, but received ${fmt(this.actual)}`);
+    this.assert('toBeNaN', Number.isNaN(this.actual), `Expected NaN, but received ${fmt(this.actual)}`);
   }
 
   toContainEqual(expected: unknown): void {
     const actual = this.actual as unknown[];
     const pass = Array.isArray(actual) && actual.some((item) => JSON.stringify(item) === JSON.stringify(expected));
-    this.assert(pass, `Expected ${fmt(this.actual)} to contain equal ${fmt(expected)}`);
+    this.assert('toContainEqual', pass, `Expected ${fmt(this.actual)} to contain equal ${fmt(expected)}`);
   }
 
   toHaveLength(expected: number): void {
     const actual = this.actual as any;
     const length = actual?.length ?? 0;
-    this.assert(length === expected, `Expected length ${expected}, but received ${length}`);
+    this.assert('toHaveLength', length === expected, `Expected length ${expected}, but received ${length}`);
   }
 
   toHaveProperty(key: string, value?: unknown): void {
     const actual = this.actual as any;
     const hasKey = actual != null && key in actual;
     const pass = value === undefined ? hasKey : hasKey && Object.is(actual[key], value);
-    this.assert(pass, `Expected ${fmt(this.actual)} to have property "${key}"${value !== undefined ? ` with value ${fmt(value)}` : ''}`);
+    this.assert('toHaveProperty', pass, `Expected ${fmt(this.actual)} to have property "${key}"${value !== undefined ? ` with value ${fmt(value)}` : ''}`);
   }
 
   toMatchObject(expected: Record<string, unknown>): void {
     const actual = this.actual as Record<string, unknown>;
     const pass = actual != null && Object.keys(expected).every((key) => JSON.stringify(actual[key]) === JSON.stringify(expected[key]));
-    this.assert(pass, `Expected ${fmt(this.actual)} to match object ${fmt(expected)}`);
+    this.assert('toMatchObject', pass, `Expected ${fmt(this.actual)} to match object ${fmt(expected)}`);
   }
 
   toStrictEqual(expected: T): void {
     const pass = JSON.stringify(this.actual) === JSON.stringify(expected)
       && Object.getPrototypeOf(this.actual) === Object.getPrototypeOf(expected);
-    this.assert(pass, `Expected ${fmt(expected)}, but received ${fmt(this.actual)}`);
+    this.assert('toStrictEqual', pass, `Expected ${fmt(expected)}, but received ${fmt(this.actual)}`);
   }
 
   toThrow(expected?: string | RegExp): void {
@@ -541,18 +555,30 @@ class ValueAssertions<T> {
       error = e;
     }
     if (expected === undefined) {
-      this.assert(threw, 'Expected function to throw');
+      this.assert('toThrow', threw, 'Expected function to throw');
     } else {
       const message = threw && error instanceof Error ? error.message : String(error);
       const matches = typeof expected === 'string' ? message.includes(expected) : expected.test(message);
-      this.assert(threw && matches, `Expected function to throw matching ${fmt(expected)}, but got ${fmt(message)}`);
+      this.assert('toThrow', threw && matches, `Expected function to throw matching ${fmt(expected)}, but got ${fmt(message)}`);
     }
   }
 
-  private assert(pass: boolean, message: string): void {
+  // Evaluates synchronously and throws synchronously on failure, exactly as before
+  // (callers rely on this: none of these matchers are awaited). The reporter step
+  // (when a runner installed defaultStepFn) is recorded as a best-effort side
+  // effect via the shared wrapAssertion/runStep helper, reusing the same title
+  // convention as LocatorAssertions/PageAssertions/WebLocatorAssertions — its own
+  // rejection is swallowed since the real failure is already thrown below.
+  private assert(method: string, pass: boolean, message: string): void {
     const ok = this.negated ? !pass : pass;
-    if (!ok) {
-      throw new ExpectError(this.negated ? `Negation failed: ${message}` : message);
+    const error = ok ? null : new ExpectError(this.negated ? `Negation failed: ${message}` : message);
+    void wrapAssertion(defaultStepFn, this.negated, method, async () => {
+      if (error) {
+        throw error;
+      }
+    }, this).catch(() => { /* real failure already thrown synchronously below */ });
+    if (error) {
+      throw error;
     }
   }
 }
