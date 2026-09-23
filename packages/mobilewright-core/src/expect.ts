@@ -583,14 +583,22 @@ class ValueAssertions<T> {
   }
 
   // Best-effort, fire-and-forget step recording shared by assert() and toThrow()'s
-  // invalid-input path; its own rejection is swallowed since the real failure (if
-  // any) is thrown synchronously by the caller right after calling this.
+  // invalid-input path; both a promise rejection AND a synchronous throw from the
+  // installed StepFn are swallowed here (an installed StepFn is expected to return
+  // a Promise per its type, but a misbehaving one could still throw synchronously),
+  // since the real failure (if any) is thrown synchronously by the caller right
+  // after calling this — reporting must never turn a passing assertion into a
+  // thrown one, nor replace the real ExpectError of a failing one.
   private reportStep(method: string, error: ExpectError | null): void {
-    void wrapAssertion(defaultStepFn, this.negated, method, async () => {
-      if (error) {
-        throw error;
-      }
-    }, this).catch(() => { /* real failure already thrown synchronously by the caller */ });
+    try {
+      void wrapAssertion(defaultStepFn, this.negated, method, async () => {
+        if (error) {
+          throw error;
+        }
+      }, this).catch(() => { /* real failure already thrown synchronously by the caller */ });
+    } catch {
+      // installed StepFn threw synchronously instead of rejecting; still best-effort.
+    }
   }
 }
 

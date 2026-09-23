@@ -1080,4 +1080,18 @@ test.describe('value assertions report a reporter step', () => {
 
     expect(() => mwExpect(42).not.toThrow()).toThrow('Expected a function, but received 42');
   });
+
+  test('a StepFn that throws synchronously does not turn a passing assertion into a failure', () => {
+    const throwingStepFn: StepFn = () => { throw new Error('reporter blew up'); };
+    setDefaultStepFn(throwingStepFn);
+
+    expect(() => mwExpect(1).toBe(1)).not.toThrow();
+  });
+
+  test('a StepFn that throws synchronously does not replace the real ExpectError of a failing assertion', () => {
+    const throwingStepFn: StepFn = () => { throw new Error('reporter blew up'); };
+    setDefaultStepFn(throwingStepFn);
+
+    expect(() => mwExpect(1).toBeGreaterThan(2)).toThrow('Expected 1 > 2');
+  });
 });
