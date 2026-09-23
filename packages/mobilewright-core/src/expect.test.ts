@@ -1065,4 +1065,19 @@ test.describe('value assertions report a reporter step', () => {
     expect(() => mwExpect(1).toBe(1)).not.toThrow();
     expect(() => mwExpect(1).toBeGreaterThan(2)).toThrow(ExpectError);
   });
+
+  test('records a step for toThrow() called with a non-function, and still throws synchronously', () => {
+    const { stepFn, titles } = recordingStepFn();
+    setDefaultStepFn(stepFn);
+
+    expect(() => mwExpect(42).toThrow()).toThrow('Expected a function, but received 42');
+    expect(titles).toContain('expect.toThrow()');
+  });
+
+  test('toThrow() with a non-function still throws through .not', () => {
+    const { stepFn } = recordingStepFn();
+    setDefaultStepFn(stepFn);
+
+    expect(() => mwExpect(42).not.toThrow()).toThrow('Expected a function, but received 42');
+  });
 });

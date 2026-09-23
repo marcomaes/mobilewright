@@ -543,7 +543,11 @@ class ValueAssertions<T> {
 
   toThrow(expected?: string | RegExp): void {
     if (typeof this.actual !== 'function') {
-      throw new ExpectError(`Expected a function, but received ${fmt(this.actual)}`);
+      // Invalid usage, not a match/mismatch: throws regardless of `.not`, so it goes
+      // through reportStep() directly rather than assert() (which would apply negation).
+      const error = new ExpectError(`Expected a function, but received ${fmt(this.actual)}`);
+      this.reportStep('toThrow', error);
+      throw error;
     }
     const fn = this.actual as () => unknown;
     let threw = false;
@@ -572,14 +576,21 @@ class ValueAssertions<T> {
   private assert(method: string, pass: boolean, message: string): void {
     const ok = this.negated ? !pass : pass;
     const error = ok ? null : new ExpectError(this.negated ? `Negation failed: ${message}` : message);
+    this.reportStep(method, error);
+    if (error) {
+      throw error;
+    }
+  }
+
+  // Best-effort, fire-and-forget step recording shared by assert() and toThrow()'s
+  // invalid-input path; its own rejection is swallowed since the real failure (if
+  // any) is thrown synchronously by the caller right after calling this.
+  private reportStep(method: string, error: ExpectError | null): void {
     void wrapAssertion(defaultStepFn, this.negated, method, async () => {
       if (error) {
         throw error;
       }
-    }, this).catch(() => { /* real failure already thrown synchronously below */ });
-    if (error) {
-      throw error;
-    }
+    }, this).catch(() => { /* real failure already thrown synchronously by the caller */ });
   }
 }
 
