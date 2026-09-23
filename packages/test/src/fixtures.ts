@@ -13,8 +13,8 @@ import {
   type AllocationCriteria,
   type AllocationHandle,
 } from 'mobilewright';
-import { expect, setSoftFailureHandler } from '@mobilewright/core';
-import type { Device, Screen } from '@mobilewright/core';
+import { expect, setSoftFailureHandler, setDefaultStepFn } from '@mobilewright/core';
+import type { Device, Screen, StepFn } from '@mobilewright/core';
 import {
   assertValidZipFile,
   mergeDeviceConfig,
@@ -27,6 +27,10 @@ import {
 } from './fixture-helpers.js';
 
 const debug = createDebug('mw:test:fixtures');
+
+function createStepFn(): StepFn {
+  return (title, fn, location) => (base.step as any)(title, fn, { location });
+}
 
 // same private Playwright API its own expect.soft goes through
 interface SoftFailureReporter {
@@ -61,6 +65,7 @@ type MobilewrightTestFixtures = {
   installApps: string | string[] | undefined;
   viewTree: 'on-failure' | 'off';
   device: Device;
+  expectStepReporting: void;
 };
 
 async function allocateWithinTimeout(client: DevicePoolClient, criteria: AllocationCriteria, timeoutMs: number): Promise<AllocationHandle> {
@@ -109,6 +114,19 @@ export const test = base.extend<MobilewrightTestFixtures>({
     await use(parseViewTreeOption(config.viewTree));
   }, { option: true }],
 
+  // Auto fixture, independent of `device`: every test gets step reporting for plain-value
+  // expect() assertions (expect(x).toBe(y)), and it's torn down when THIS test ends, so the
+  // module-level defaultStepFn never survives past its test (e.g. into an afterAll running
+  // after the last test's device already disconnected, where calling test.step() would fail).
+  expectStepReporting: [async ({}, use) => {
+    setDefaultStepFn(createStepFn());
+    try {
+      await use();
+    } finally {
+      setDefaultStepFn(null);
+    }
+  }, { auto: true }],
+
   // Setup runs outside the test timeout (timeout: 0): each stage carries its own bound instead —
   // allocationTimeout for queue + provisioning, installTimeout, appLaunchTimeout. A cloud queue
   // can hold a worker for many minutes, and that wait must not eat the test body's budget.
@@ -156,7 +174,7 @@ export const test = base.extend<MobilewrightTestFixtures>({
         await device.launchApp(bundleId);
       }
 
-      device.setStepFn((title, fn, location) => (base.step as any)(title, fn, { location }));
+      device.setStepFn(createStepFn());
 
       await use(device);
     } finally {
